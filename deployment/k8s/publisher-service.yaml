@@ -1,0 +1,77 @@
+---
+# Publisher Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: publisher-service
+  namespace: distributed-events
+  labels:
+    app: publisher-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: publisher-service
+  template:
+    metadata:
+      labels:
+        app: publisher-service
+    spec:
+      serviceAccountName: distributed-events-sa
+      containers:
+      - name: publisher-service
+        image: your-registry/publisher-service:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5003
+        env:
+        - name: PORT
+          value: "5003"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: EVENT_MEDIA_BUCKET
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: EVENT_MEDIA_BUCKET
+        envFrom:
+        - configMapRef:
+            name: app-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5003
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+# Publisher Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: publisher-service
+  namespace: distributed-events
+spec:
+  type: ClusterIP
+  selector:
+    app: publisher-service
+  ports:
+  - port: 5003
+    targetPort: 5003
+
+

@@ -1,0 +1,32 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: distributed-events
+data:
+  # RabbitMQ Configuration
+  RABBITMQ_HOST: "rabbitmq-service"
+  RABBITMQ_PORT: "5672"
+  RABBITMQ_USER: "guest"
+  RABBITMQ_EXCHANGE: "events.topic"
+  
+  # AWS Configuration
+  AWS_REGION: "us-east-1"
+  
+  # DynamoDB Tables
+  USERS_TABLE: "Users"
+  SUBSCRIPTIONS_TABLE: "Subscriptions"
+  EVENTS_TABLE: "Events"
+  TOPIC_POPULARITY_TABLE: "TopicPopularity"
+  
+  # Service URLs (internal)
+  AUTH_SERVICE_URL: "http://auth-service:5001"
+  SUBSCRIPTION_SERVICE_URL: "http://subscription-service:5002"
+  PUBLISHER_SERVICE_URL: "http://publisher-service:5003"
+  DISPATCHER_SERVICE_URL: "http://notification-dispatcher-service:5004"
+  GOSSIP_AGENT_URL: "http://gossip-agent-service:5006"
+  
+  # Flask Environment
+  FLASK_ENV: "production"
+
+

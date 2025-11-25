@@ -1,0 +1,191 @@
+# Docker Compose for local development
+# For production, use Kubernetes manifests in deployment/k8s/
+
+version: '3.8'
+
+services:
+  # Redis Cache for Notifications
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    networks:
+      - distributed-events-net
+
+  # RabbitMQ Message Broker
+  rabbitmq:
+    image: rabbitmq:3.12-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    networks:
+      - distributed-events-net
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ../../backend
+      dockerfile: api_gateway/Dockerfile
+    container_name: api-gateway
+    ports:
+      - "5000:5000"
+    environment:
+      PORT: 5000
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      AUTH_SERVICE_URL: http://auth-service:5001
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:5002
+      PUBLISHER_SERVICE_URL: http://publisher-service:5003
+      DISPATCHER_SERVICE_URL: http://notification-dispatcher:5004
+      FLASK_ENV: development
+    depends_on:
+      - auth-service
+      - subscription-service
+      - publisher-service
+      - notification-dispatcher
+    networks:
+      - distributed-events-net
+
+  # Auth Service
+  auth-service:
+    build:
+      context: ../../backend
+      dockerfile: auth_service/Dockerfile
+    container_name: auth-service
+    environment:
+      PORT: 5001
+      JWT_SECRET: ${JWT_SECRET:-your-secret-key-change-in-production}
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      USERS_TABLE: Users
+      FLASK_ENV: development
+    networks:
+      - distributed-events-net
+
+  # Subscription Service
+  subscription-service:
+    build:
+      context: ../../backend
+      dockerfile: subscription_service/Dockerfile
+    container_name: subscription-service
+    environment:
+      PORT: 5002
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      SUBSCRIPTIONS_TABLE: Subscriptions
+      FLASK_ENV: development
+    networks:
+      - distributed-events-net
+
+  # Publisher Service
+  publisher-service:
+    build:
+      context: ../../backend
+      dockerfile: publisher_service/Dockerfile
+    container_name: publisher-service
+    environment:
+      PORT: 5003
+      PYTHONUNBUFFERED: 1
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      EVENTS_TABLE: Events
+      EVENT_MEDIA_BUCKET: ${EVENT_MEDIA_BUCKET}
+      SUBSCRIPTION_SERVICE_URL: http://subscription-service:5002
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_EXCHANGE: events.topic
+      FLASK_ENV: development
+    depends_on:
+      - rabbitmq
+      - subscription-service
+    networks:
+      - distributed-events-net
+
+  # Notification Dispatcher
+  notification-dispatcher:
+    build:
+      context: ../../backend
+      dockerfile: notification_dispatcher/Dockerfile
+    container_name: notification-dispatcher
+    ports:
+      - "5004:5004"
+    environment:
+      PORT: 5004
+      NODE_ID: dispatcher-1
+      NODE_URL: http://notification-dispatcher:5004
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      NOTIFICATIONS_SNS_TOPIC_ARN: ${NOTIFICATIONS_SNS_TOPIC_ARN}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      RABBITMQ_EXCHANGE: events.topic
+      GOSSIP_AGENT_URL: http://gossip-agent:5006
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      FLASK_ENV: development
+    depends_on:
+      - rabbitmq
+      - gossip-agent
+      - redis
+    networks:
+      - distributed-events-net
+
+  # Gossip Agent
+  gossip-agent:
+    build:
+      context: ../../backend
+      dockerfile: gossip_agent/Dockerfile
+    container_name: gossip-agent
+    ports:
+      - "5006:5006"
+    environment:
+      PORT: 5006
+      NODE_ID: gossip-1
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      FLASK_ENV: development
+    networks:
+      - distributed-events-net
+
+  # Frontend Web Application
+  frontend-web:
+    build:
+      context: ../../frontend/web
+      dockerfile: Dockerfile
+    container_name: frontend-web
+    ports:
+      - "3000:80"
+    environment:
+      REACT_APP_API_URL: http://localhost:5000
+    depends_on:
+      - api-gateway
+    networks:
+      - distributed-events-net
+
+networks:
+  distributed-events-net:
+    driver: bridge
+
+volumes:
+  rabbitmq_data:
+  redis_data:
+
+

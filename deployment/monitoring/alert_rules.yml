@@ -1,0 +1,134 @@
+# Prometheus Alert Rules for Distributed Events System
+
+groups:
+  - name: distributed_events_alerts
+    interval: 30s
+    rules:
+      # Service availability alerts
+      - alert: ServiceDown
+        expr: up{job=~"api-gateway|auth-service|subscription-service|publisher-service|notification-dispatcher|gossip-agent"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Service {{ $labels.job }} is down"
+          description: "{{ $labels.job }} has been down for more than 2 minutes."
+
+      # High error rate
+      - alert: HighErrorRate
+        expr: rate(http_requests_total{status=~"5.."}[5m]) / rate(http_requests_total[5m]) > 0.05
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "{{ $labels.job }} has error rate above 5% (current: {{ $value }})"
+
+      # High latency
+      - alert: HighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High latency on {{ $labels.job }}"
+          description: "95th percentile latency is above 1s (current: {{ $value }}s)"
+
+      # Leader election alerts
+      - alert: NoLeaderElected
+        expr: sum(leader_election_is_leader) == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No leader elected in dispatcher cluster"
+          description: "The notification dispatcher cluster has no leader for 2 minutes."
+
+      # MCP alerts
+      - alert: HighNodeFailureRate
+        expr: sum(rate(mcp_nodes_dead_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High node failure rate in MCP"
+          description: "MCP is detecting high node failure rate ({{ $value }} nodes/sec)"
+
+      # Gossip protocol alerts
+      - alert: GossipStopped
+        expr: rate(gossip_rounds_total[5m]) == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Gossip protocol stopped on {{ $labels.instance }}"
+          description: "No gossip rounds completed in the last 5 minutes."
+
+      # RabbitMQ alerts
+      - alert: RabbitMQDown
+        expr: up{job="rabbitmq"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "RabbitMQ is down"
+          description: "RabbitMQ has been down for more than 1 minute."
+
+      - alert: RabbitMQHighQueueDepth
+        expr: rabbitmq_queue_messages > 1000
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High queue depth in RabbitMQ"
+          description: "Queue {{ $labels.queue }} has {{ $value }} messages."
+
+      # Resource alerts
+      - alert: HighMemoryUsage
+        expr: container_memory_usage_bytes / container_spec_memory_limit_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.pod }}"
+          description: "Memory usage is above 90% (current: {{ $value }})"
+
+      - alert: HighCPUUsage
+        expr: rate(container_cpu_usage_seconds_total[5m]) > 0.8
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.pod }}"
+          description: "CPU usage is above 80% (current: {{ $value }})"
+
+      # DynamoDB alerts
+      - alert: DynamoDBThrottling
+        expr: sum(rate(aws_dynamodb_user_errors_total{error_type="ProvisionedThroughputExceededException"}[5m])) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "DynamoDB throttling detected"
+          description: "DynamoDB requests are being throttled."
+
+      # Application-specific alerts
+      - alert: LowSubscriberCount
+        expr: publisher_filtered_subscribers_count < 1
+        for: 10m
+        labels:
+          severity: info
+        annotations:
+          summary: "Event published with no subscribers"
+          description: "Events are being published but no subscribers are matched."
+
+      - alert: NotificationDeliveryFailed
+        expr: rate(notification_delivery_failures_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High notification delivery failure rate"
+          description: "Notification delivery failing at rate {{ $value }}/sec"
+
+

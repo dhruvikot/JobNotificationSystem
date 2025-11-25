@@ -1,0 +1,77 @@
+---
+# Gossip Agent Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gossip-agent
+  namespace: distributed-events
+  labels:
+    app: gossip-agent
+spec:
+  replicas: 3  # Multiple gossip agents for redundancy
+  selector:
+    matchLabels:
+      app: gossip-agent
+  template:
+    metadata:
+      labels:
+        app: gossip-agent
+        role: gossip
+    spec:
+      serviceAccountName: distributed-events-sa
+      containers:
+      - name: gossip-agent
+        image: your-registry/gossip-agent:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5006
+        env:
+        - name: PORT
+          value: "5006"
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        envFrom:
+        - configMapRef:
+            name: app-config
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "200m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5006
+          initialDelaySeconds: 30
+          periodSeconds: 10
+
+---
+# Gossip Agent Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: gossip-agent-service
+  namespace: distributed-events
+spec:
+  type: ClusterIP
+  selector:
+    app: gossip-agent
+  ports:
+  - port: 5006
+    targetPort: 5006
+
+

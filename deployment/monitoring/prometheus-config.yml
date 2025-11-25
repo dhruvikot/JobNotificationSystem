@@ -1,0 +1,139 @@
+# Prometheus Configuration for Distributed Events System
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'distributed-events'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'alertmanager:9093'
+
+# Load rules once and periodically evaluate them
+rule_files:
+  - 'alert_rules.yml'
+
+# Scrape configurations
+scrape_configs:
+  # Prometheus itself
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # API Gateway
+  - job_name: 'api-gateway'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: api-gateway
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+
+  # Auth Service
+  - job_name: 'auth-service'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: auth-service
+        action: keep
+
+  # Subscription Service
+  - job_name: 'subscription-service'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: subscription-service
+        action: keep
+
+  # Publisher Service
+  - job_name: 'publisher-service'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: publisher-service
+        action: keep
+
+  # Notification Dispatcher
+  - job_name: 'notification-dispatcher'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: notification-dispatcher
+        action: keep
+
+  # Gossip Agent
+  - job_name: 'gossip-agent'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: gossip-agent
+        action: keep
+
+  # RabbitMQ
+  - job_name: 'rabbitmq'
+    static_configs:
+      - targets: ['rabbitmq-service.distributed-events.svc.cluster.local:15692']
+    metrics_path: /metrics
+
+  # Kubernetes nodes
+  - job_name: 'kubernetes-nodes'
+    kubernetes_sd_configs:
+      - role: node
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+
+  # Kubernetes pods
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - distributed-events
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        action: replace
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        action: replace
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+
+

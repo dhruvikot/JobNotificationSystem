@@ -1,0 +1,108 @@
+---
+# Notification Dispatcher Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-dispatcher
+  namespace: distributed-events
+  labels:
+    app: notification-dispatcher
+spec:
+  replicas: 3  # Multiple replicas for leader election
+  selector:
+    matchLabels:
+      app: notification-dispatcher
+  template:
+    metadata:
+      labels:
+        app: notification-dispatcher
+        role: dispatcher
+    spec:
+      serviceAccountName: distributed-events-sa
+      containers:
+      - name: notification-dispatcher
+        image: your-registry/notification-dispatcher:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 5004
+        env:
+        - name: PORT
+          value: "5004"
+        - name: NODE_ID
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name  # Use pod name as node ID
+        - name: NODE_URL
+          value: "http://$(NODE_ID).notification-dispatcher-service.distributed-events.svc.cluster.local:5004"
+        - name: AWS_ACCESS_KEY_ID
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_ACCESS_KEY_ID
+        - name: AWS_SECRET_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: AWS_SECRET_ACCESS_KEY
+        - name: NOTIFICATIONS_SNS_TOPIC_ARN
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: NOTIFICATIONS_SNS_TOPIC_ARN
+        envFrom:
+        - configMapRef:
+            name: app-config
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5004
+          initialDelaySeconds: 45
+          periodSeconds: 10
+
+---
+# Notification Dispatcher Service (Headless for StatefulSet-like behavior)
+apiVersion: v1
+kind: Service
+metadata:
+  name: notification-dispatcher-service
+  namespace: distributed-events
+spec:
+  type: ClusterIP
+  clusterIP: None  # Headless service for leader election
+  selector:
+    app: notification-dispatcher
+  ports:
+  - port: 5004
+    targetPort: 5004
+    name: http
+
+---
+# Notification Dispatcher HPA
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: notification-dispatcher-hpa
+  namespace: distributed-events
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: notification-dispatcher
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+
+

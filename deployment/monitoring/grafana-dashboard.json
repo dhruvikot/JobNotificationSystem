@@ -1,0 +1,148 @@
+{
+  "dashboard": {
+    "title": "Distributed Events System Overview",
+    "tags": ["distributed-systems", "microservices"],
+    "timezone": "browser",
+    "panels": [
+      {
+        "id": 1,
+        "title": "Service Health",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "up{job=~\"api-gateway|auth-service|subscription-service|publisher-service|notification-dispatcher|gossip-agent\"}",
+            "legendFormat": "{{ job }}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 0, "w": 12, "h": 4}
+      },
+      {
+        "id": 2,
+        "title": "Request Rate (req/sec)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total[5m])) by (job)",
+            "legendFormat": "{{ job }}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 0, "w": 12, "h": 8}
+      },
+      {
+        "id": 3,
+        "title": "Error Rate (%)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "sum(rate(http_requests_total{status=~\"5..\"}[5m])) by (job) / sum(rate(http_requests_total[5m])) by (job) * 100",
+            "legendFormat": "{{ job }}"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 4,
+        "title": "Latency (p95)",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket[5m])) by (le, job))",
+            "legendFormat": "{{ job }}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 8, "w": 12, "h": 8}
+      },
+      {
+        "id": 5,
+        "title": "MCP Membership",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "mcp_nodes_total",
+            "legendFormat": "Total Nodes"
+          },
+          {
+            "expr": "mcp_nodes_alive",
+            "legendFormat": "Alive"
+          },
+          {
+            "expr": "mcp_nodes_suspect",
+            "legendFormat": "Suspect"
+          },
+          {
+            "expr": "mcp_nodes_dead",
+            "legendFormat": "Dead"
+          }
+        ],
+        "gridPos": {"x": 0, "y": 16, "w": 6, "h": 6}
+      },
+      {
+        "id": 6,
+        "title": "Gossip Rounds",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(gossip_rounds_total[5m])",
+            "legendFormat": "{{ instance }}"
+          }
+        ],
+        "gridPos": {"x": 6, "y": 16, "w": 6, "h": 6}
+      },
+      {
+        "id": 7,
+        "title": "Leader Election Status",
+        "type": "stat",
+        "targets": [
+          {
+            "expr": "leader_election_is_leader",
+            "legendFormat": "{{ instance }}"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 16, "w": 6, "h": 6}
+      },
+      {
+        "id": 8,
+        "title": "RabbitMQ Queue Depth",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rabbitmq_queue_messages",
+            "legendFormat": "{{ queue }}"
+          }
+        ],
+        "gridPos": {"x": 18, "y": 16, "w": 6, "h": 6}
+      },
+      {
+        "id": 9,
+        "title": "Topic Popularity",
+        "type": "table",
+        "targets": [
+          {
+            "expr": "topk(10, topic_popularity_count)",
+            "format": "table",
+            "instant": true
+          }
+        ],
+        "gridPos": {"x": 0, "y": 22, "w": 12, "h": 8}
+      },
+      {
+        "id": 10,
+        "title": "Notification Delivery",
+        "type": "graph",
+        "targets": [
+          {
+            "expr": "rate(notifications_delivered_total[5m])",
+            "legendFormat": "Delivered"
+          },
+          {
+            "expr": "rate(notification_delivery_failures_total[5m])",
+            "legendFormat": "Failed"
+          }
+        ],
+        "gridPos": {"x": 12, "y": 22, "w": 12, "h": 8}
+      }
+    ]
+  }
+}
+
+
