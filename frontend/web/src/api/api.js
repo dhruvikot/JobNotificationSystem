@@ -22,7 +22,8 @@ api.interceptors.request.use((config) => {
 export const authAPI = {
   register: (data) => api.post('/auth/register', data),
   login: (data) => api.post('/auth/login', data),
-  getUser: (userId) => api.get(`/auth/user/${userId}`)
+  getUser: (userId) => api.get(`/auth/user/${userId}`),
+  adminCreateUser: (data) => api.post('/auth/admin/create-user', data)
 };
 
 // Subscriptions API
@@ -39,7 +40,8 @@ export const eventsAPI = {
   getEvent: (eventId) => api.get(`/events/${eventId}`),
   createEvent: (data) => api.post('/events', data),
   updateEvent: (eventId, data) => api.put(`/events/${eventId}`, data),
-  publishEvent: (eventId) => api.post(`/events/${eventId}/publish`)
+  publishEvent: (eventId) => api.post(`/events/${eventId}/publish`),
+  unpublishEvent: (eventId) => api.post(`/events/${eventId}/unpublish`)
 };
 
 // Notifications API

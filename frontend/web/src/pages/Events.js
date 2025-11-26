@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
 import { eventsAPI } from '../api/api';
 import './Events.css';
 
 function Events() {
+  const { user } = useAuth();
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
@@ -22,6 +24,38 @@ function Events() {
       setLoading(false);
     }
   };
+
+  const handleUnpublish = async (eventId) => {
+    if (!window.confirm('Are you sure you want to unpublish this event? It will no longer be visible to students.')) {
+      return;
+    }
+
+    try {
+      await eventsAPI.unpublishEvent(eventId);
+      alert('Event unpublished successfully!');
+      loadEvents(); // Reload events
+    } catch (err) {
+      console.error('Error unpublishing event:', err);
+      alert(err.response?.data?.error || 'Failed to unpublish event');
+    }
+  };
+
+  const handlePublish = async (eventId) => {
+    if (!window.confirm('Are you sure you want to publish this event? All subscribed students will be notified.')) {
+      return;
+    }
+
+    try {
+      await eventsAPI.publishEvent(eventId);
+      alert('Event published successfully! Notifications sent to subscribers.');
+      loadEvents(); // Reload events
+    } catch (err) {
+      console.error('Error publishing event:', err);
+      alert(err.response?.data?.error || 'Failed to publish event');
+    }
+  };
+
+  const isOrganizer = user && (user.role === 'organizer' || user.role === 'admin');
 
   const formatDate = (timestamp) => {
     if (!timestamp) return 'TBD';
@@ -78,8 +112,10 @@ function Events() {
               <div className="event-content">
                 <div className="event-meta">
                   <span className="badge badge-primary">{event.topic}</span>
-                  {event.status === 'published' && (
-                    <span className="badge badge-success">Published</span>
+                  {event.status === 'published' ? (
+                    <span className="badge badge-success">✓ Published</span>
+                  ) : (
+                    <span className="badge badge-warning">📝 Draft</span>
                   )}
                 </div>
                 <h3>{event.title}</h3>
@@ -96,6 +132,25 @@ function Events() {
                     </div>
                   )}
                 </div>
+                {isOrganizer && (
+                  <div className="event-actions">
+                    {event.status === 'draft' ? (
+                      <button 
+                        onClick={() => handlePublish(event.event_id)}
+                        className="btn btn-primary btn-sm"
+                      >
+                        📤 Publish Event
+                      </button>
+                    ) : (
+                      <button 
+                        onClick={() => handleUnpublish(event.event_id)}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        📥 Unpublish
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
           ))}
@@ -106,5 +161,3 @@ function Events() {
 }
 
 export default Events;
-
-

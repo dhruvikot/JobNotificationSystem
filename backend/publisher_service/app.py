@@ -608,6 +608,78 @@ def publish_event(event_id):
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/events/<event_id>/unpublish', methods=['POST'])
+def unpublish_event(event_id):
+    """
+    Unpublish an event (change status from published to draft).
+    
+    Only organizers and admins can unpublish events.
+    This removes the event from public view for students.
+    
+    Headers:
+        X-User-ID: user_id
+        X-User-Role: role
+    
+    Response:
+    {
+        "success": true,
+        "event_id": "...",
+        "message": "Event unpublished"
+    }
+    """
+    try:
+        user_id, role, error = get_user_from_token(request)
+        if error:
+            return jsonify({'error': error}), 401
+        
+        # Get event
+        response = events_table.get_item(Key={'event_id': event_id})
+        
+        if 'Item' not in response:
+            return jsonify({'error': 'Event not found'}), 404
+        
+        event = response['Item']
+        
+        # Check permissions
+        if event['organizer_id'] != user_id and role != 'admin':
+            return jsonify({'error': 'Unauthorized to unpublish this event'}), 403
+        
+        # Check if already draft
+        if event.get('status') == 'draft':
+            return jsonify({'error': 'Event is already unpublished'}), 400
+        
+        print(f"[Publisher] Unpublishing event {event_id}: {event['title']}")
+        
+        # Update event status to draft
+        events_table.update_item(
+            Key={'event_id': event_id},
+            UpdateExpression='SET #status = :status, updated_at = :updated_at',
+            ExpressionAttributeNames={'#status': 'status'},
+            ExpressionAttributeValues={
+                ':status': 'draft',
+                ':updated_at': int(time.time())
+            }
+        )
+        
+        print(f"[Publisher] Successfully unpublished event {event_id}")
+        
+        return jsonify({
+            'success': True,
+            'event_id': event_id,
+            'message': 'Event unpublished successfully'
+        }), 200
+    
+    except ClientError as e:
+        print(f"[Publisher] DynamoDB error: {e}")
+        return jsonify({'error': 'Database error occurred'}), 500
+    
+    except Exception as e:
+        print(f"[Publisher] Error unpublishing event: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 # ============================================================================
 # Main
 # ============================================================================

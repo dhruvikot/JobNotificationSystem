@@ -205,6 +205,129 @@ def register():
         return jsonify({'error': 'Internal server error'}), 500
 
 
+@app.route('/admin/create-user', methods=['POST'])
+def admin_create_user():
+    """
+    Admin endpoint to create new users (especially publishers/organizers).
+    
+    Headers:
+        X-User-ID: admin's user_id
+        X-User-Role: admin
+    
+    Request body:
+    {
+        "email": "publisher@example.com",
+        "password": "password123",
+        "name": "John Doe",
+        "phone": "+1234567890",  # optional
+        "role": "organizer"  # or "student", "admin"
+    }
+    
+    Response:
+    {
+        "success": true,
+        "user_id": "...",
+        "user": {...},
+        "message": "User created successfully"
+    }
+    """
+    try:
+        # Check admin authorization
+        user_role = request.headers.get('X-User-Role')
+        if user_role != 'admin':
+            return jsonify({'error': 'Admin access required'}), 403
+        
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'No data provided'}), 400
+        
+        # Validate input
+        is_valid, error_msg = validate_registration_data(data)
+        if not is_valid:
+            return jsonify({'error': error_msg}), 400
+        
+        email = data['email'].lower().strip()
+        password = data['password']
+        name = data['name'].strip()
+        phone = data.get('phone', '')
+        role = data.get('role', 'student')
+        
+        # Validate role
+        if role not in ['student', 'organizer', 'admin']:
+            return jsonify({'error': 'Invalid role. Must be student, organizer, or admin'}), 400
+        
+        # Check if user already exists
+        try:
+            response = users_table.query(
+                IndexName='EmailIndex',
+                KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(email)
+            )
+            
+            if response['Items']:
+                return jsonify({'error': 'User with this email already exists'}), 409
+        
+        except ClientError as e:
+            # If EmailIndex doesn't exist, do a scan (less efficient)
+            print(f"[Auth] Warning: EmailIndex not found, using scan: {e}")
+            response = users_table.scan(
+                FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(email)
+            )
+            if response['Items']:
+                return jsonify({'error': 'User with this email already exists'}), 409
+        
+        # Generate user ID
+        user_id = f"U{int(time.time() * 1000)}"
+        
+        # Hash password
+        password_hash = hash_password(password)
+        
+        # Create user record
+        user_item = {
+            'user_id': user_id,
+            'email': email,
+            'name': name,
+            'password_hash': password_hash,
+            'role': role,
+            'phone': phone,
+            'created_at': int(time.time()),
+            'updated_at': int(time.time())
+        }
+        
+        # Save to DynamoDB
+        users_table.put_item(Item=user_item)
+        
+        admin_id = request.headers.get('X-User-ID', 'unknown')
+        print(f"[Auth] Admin {admin_id} created new user: {user_id} ({email}) with role {role}")
+        
+        # Return user data without password hash
+        user_response = {
+            'user_id': user_id,
+            'email': email,
+            'name': name,
+            'role': role,
+            'phone': phone,
+            'created_at': user_item['created_at']
+        }
+        
+        return jsonify({
+            'success': True,
+            'user_id': user_id,
+            'user': user_response,
+            'message': f'{role.capitalize()} account created successfully'
+        }), 201
+    
+    except ClientError as e:
+        print(f"[Auth] DynamoDB error: {e}")
+        return jsonify({'error': 'Database error occurred'}), 500
+    
+    except Exception as e:
+        print(f"[Auth] Admin create user error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': 'Internal server error'}), 500
+
+
 @app.route('/login', methods=['POST'])
 def login():
     """

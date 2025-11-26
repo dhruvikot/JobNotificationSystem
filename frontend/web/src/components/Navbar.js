@@ -28,6 +28,10 @@ function Navbar() {
           {user && (user.role === 'organizer' || user.role === 'admin') && (
             <Link to="/events/create" className="navbar-link">Create Event</Link>
           )}
+          
+          {user && user.role === 'admin' && (
+            <Link to="/admin" className="navbar-link navbar-link-admin">Admin Panel</Link>
+          )}
         </div>
         
         <div className="navbar-user">

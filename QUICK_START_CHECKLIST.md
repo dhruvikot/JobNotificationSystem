@@ -127,12 +127,14 @@ aws dynamodb create-table --table-name TopicPopularity --attribute-definitions A
 - [ ] Choose a unique bucket name (e.g., `distributed-events-YOURNAME-12345`)
 - [ ] Run: `aws s3 mb s3://YOUR-BUCKET-NAME --region us-east-1`
 - [ ] ✅ Bucket created
-- [ ] **Write down your bucket name:** ___________________________
+- [ ] **Write down your bucket name:** ____________events-jobs_______________
 
 ### Step 11: Create SNS Topic
 - [ ] Run: `aws sns create-topic --name distributed-events-notifications --region us-east-1`
 - [ ] ✅ Copy the ARN (looks like: `arn:aws:sns:us-east-1:123456789012:...`)
-- [ ] **Write down your SNS ARN:** ___________________________
+- [ ] **Write down your SNS ARN:** _______{
+    "TopicArn": "arn:aws:sns:us-east-1:525858612396:events-notifications"
+}____________________
 
 ---
 

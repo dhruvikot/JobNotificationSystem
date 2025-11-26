@@ -267,6 +267,22 @@ def get_user(user_id):
     return jsonify(data), status
 
 
+@app.route('/auth/admin/create-user', methods=['POST'])
+@require_role('admin')
+def admin_create_user():
+    """Admin endpoint to create new users (publishers/organizers)"""
+    headers = add_user_headers({})
+    
+    data, status = forward_request(
+        AUTH_SERVICE_URL,
+        '/admin/create-user',
+        method='POST',
+        json=request.get_json(),
+        headers=headers
+    )
+    return jsonify(data), status
+
+
 # ============================================================================
 # Subscription Endpoints
 # ============================================================================
@@ -334,9 +350,25 @@ def delete_subscription(topic):
 
 @app.route('/events', methods=['GET'])
 def list_events():
-    """List events (public)"""
+    """List events - students see only published, organizers see all"""
     # Forward query params
     params = request.args.to_dict()
+    
+    # Check if user is authenticated
+    token = request.headers.get('Authorization', '').replace('Bearer ', '')
+    user_role = 'student'  # Default to student (most restrictive)
+    
+    if token:
+        try:
+            decoded = jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+            user_role = decoded.get('role', 'student')
+        except:
+            pass  # If token invalid, treat as student
+    
+    # Students should only see published events
+    if user_role == 'student':
+        params['status'] = 'published'
+    # Organizers and admins can see all events (draft + published)
     
     data, status = forward_request(
         PUBLISHER_SERVICE_URL,
@@ -399,6 +431,21 @@ def publish_event(event_id):
     data, status = forward_request(
         PUBLISHER_SERVICE_URL,
         f'/events/{event_id}/publish',
+        method='POST',
+        headers=headers
+    )
+    return jsonify(data), status
+
+
+@app.route('/events/<event_id>/unpublish', methods=['POST'])
+@require_role('organizer', 'admin')
+def unpublish_event(event_id):
+    """Unpublish event (organizers and admins only)"""
+    headers = add_user_headers({})
+    
+    data, status = forward_request(
+        PUBLISHER_SERVICE_URL,
+        f'/events/{event_id}/unpublish',
         method='POST',
         headers=headers
     )

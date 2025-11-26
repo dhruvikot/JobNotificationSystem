@@ -11,6 +11,7 @@ import Subscriptions from './pages/Subscriptions';
 import Events from './pages/Events';
 import CreateEvent from './pages/CreateEvent';
 import Notifications from './pages/Notifications';
+import AdminPanel from './pages/AdminPanel';
 
 // Auth context
 import { AuthProvider, useAuth } from './context/AuthContext';
@@ -41,6 +42,7 @@ function AppContent() {
         <Route path="/events" element={<ProtectedRoute><Events /></ProtectedRoute>} />
         <Route path="/events/create" element={<ProtectedRoute><CreateEvent /></ProtectedRoute>} />
         <Route path="/notifications" element={<ProtectedRoute><Notifications /></ProtectedRoute>} />
+        <Route path="/admin" element={<ProtectedRoute><AdminPanel /></ProtectedRoute>} />
         
         <Route path="/" element={<Navigate to={token ? "/dashboard" : "/login"} replace />} />
       </Routes>
