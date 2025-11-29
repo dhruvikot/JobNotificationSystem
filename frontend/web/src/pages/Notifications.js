@@ -14,8 +14,12 @@ function Notifications() {
     
     // Subscribe to real-time notifications
     const handleNewNotification = (notification) => {
-      console.log('[Notifications] Real-time notification received:', notification);
-      setNotifications(prev => [notification, ...prev]);
+      console.log('[Notifications Page] Real-time notification received:', notification);
+      setNotifications(prev => {
+        console.log('[Notifications Page] Current notifications count:', prev.length);
+        console.log('[Notifications Page] Adding new notification to top');
+        return [notification, ...prev];
+      });
     };
     
     websocketService.subscribe(handleNewNotification);

@@ -15,6 +15,7 @@ Endpoints:
 import os
 import time
 import boto3
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -26,9 +27,20 @@ CORS(app)
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 SUBSCRIPTIONS_TABLE = os.getenv('SUBSCRIPTIONS_TABLE', 'Subscriptions')
 PORT = int(os.getenv('PORT', '5002'))
+DYNAMODB_ENDPOINT = os.getenv('DYNAMODB_ENDPOINT')  # For local development
 
 # Initialize DynamoDB
-dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+if DYNAMODB_ENDPOINT:
+    # Use local DynamoDB
+    dynamodb = boto3.resource('dynamodb', 
+                            region_name=AWS_REGION,
+                            endpoint_url=DYNAMODB_ENDPOINT)
+    print(f"[Subscription Service] Using DynamoDB Local at: {DYNAMODB_ENDPOINT}")
+else:
+    # Use AWS DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+    print(f"[Subscription Service] Using AWS DynamoDB in region: {AWS_REGION}")
+
 subscriptions_table = dynamodb.Table(SUBSCRIPTIONS_TABLE)
 
 print(f"[Subscription Service] Starting on port {PORT}")
@@ -183,7 +195,7 @@ def get_subscriptions():
         
         # Query subscriptions for this user
         response = subscriptions_table.query(
-            KeyConditionExpression=boto3.dynamodb.conditions.Key('user_id').eq(user_id)
+            KeyConditionExpression=Key('user_id').eq(user_id)
         )
         
         subscriptions = response['Items']
@@ -366,13 +378,13 @@ def get_subscribers_for_topic(topic):
         try:
             response = subscriptions_table.query(
                 IndexName='TopicIndex',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('topic').eq(topic)
+                KeyConditionExpression=Key('topic').eq(topic)
             )
             subscribers = response['Items']
         except ClientError:
             # Fallback to scan (less efficient)
             response = subscriptions_table.scan(
-                FilterExpression=boto3.dynamodb.conditions.Attr('topic').eq(topic)
+                FilterExpression=Attr('topic').eq(topic)
             )
             subscribers = response['Items']
         

@@ -25,6 +25,7 @@ import sys
 import time
 import json
 import threading
+import traceback
 import boto3
 import pika
 import requests
@@ -58,7 +59,8 @@ RABBITMQ_PORT = int(os.getenv('RABBITMQ_PORT', '5672'))
 RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
 RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
 RABBITMQ_EXCHANGE = os.getenv('RABBITMQ_EXCHANGE', 'events.topic')
-RABBITMQ_QUEUE = os.getenv('RABBITMQ_QUEUE', f'dispatcher_queue_{NODE_ID}')
+# Use a shared queue for load balancing across all dispatcher instances
+RABBITMQ_QUEUE = os.getenv('RABBITMQ_QUEUE', 'dispatcher_queue')
 PORT = int(os.getenv('PORT', '5004'))
 GOSSIP_AGENT_URL = os.getenv('GOSSIP_AGENT_URL', 'http://localhost:5006')
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
@@ -221,9 +223,9 @@ def process_notification(message: dict):
         priority = message.get('priority', 'medium')
         lamport_ts = message.get('lamport_timestamp', {})
         
-        print(f"[Dispatcher] Processing notification for event {event_id}")
-        print(f"[Dispatcher] Lamport timestamp: {lamport_ts}")
-        print(f"[Dispatcher] Channels: {channels}, Priority: {priority}, Subscribers: {len(subscriber_ids)}")
+        print(f"[Dispatcher {NODE_ID}] Processing notification for event {event_id}")
+        print(f"[Dispatcher {NODE_ID}] Lamport timestamp: {lamport_ts}")
+        print(f"[Dispatcher {NODE_ID}] Channels: {channels}, Priority: {priority}, Subscribers: {len(subscriber_ids)}")
         
         # Create notification object with Lamport timestamp
         notification = {
@@ -244,21 +246,23 @@ def process_notification(message: dict):
         for subscriber_id in subscriber_ids:
             if 'app' in channels:
                 # In-app notification
+                print(f"[Dispatcher {NODE_ID}] Adding in-app notification for user {subscriber_id}", flush=True)
                 add_in_app_notification(subscriber_id, notification.copy())
+                print(f"[Dispatcher {NODE_ID}] Notification added for user {subscriber_id}", flush=True)
             
             # Email and SMS would require user contact info
             # In production, fetch from Users table
             if 'email' in channels:
                 # TODO: Fetch user email from DynamoDB
                 # send_email_notification(user_email, title, description)
-                print(f"[Dispatcher] Would send email to user {subscriber_id}")
+                print(f"[Dispatcher {NODE_ID}] Would send email to user {subscriber_id}", flush=True)
             
             if 'sms' in channels:
                 # TODO: Fetch user phone from DynamoDB
                 # send_sms_notification(user_phone, f"{title}: {description[:100]}")
-                print(f"[Dispatcher] Would send SMS to user {subscriber_id}")
+                print(f"[Dispatcher {NODE_ID}] Would send SMS to user {subscriber_id}", flush=True)
         
-        print(f"[Dispatcher] Completed processing notification for event {event_id}")
+        print(f"[Dispatcher {NODE_ID}] Completed processing notification for event {event_id}", flush=True)
         return True
     
     except Exception as e:
@@ -270,17 +274,19 @@ def process_notification(message: dict):
 
 def rabbitmq_consumer_loop():
     """Background thread for consuming RabbitMQ messages"""
-    print(f"[Dispatcher] Starting RabbitMQ consumer thread")
+    print(f"[Dispatcher {NODE_ID}] Starting RabbitMQ consumer thread", flush=True)
     
     while True:
         connection = None
         try:
+            print(f"[Dispatcher {NODE_ID}] Attempting to connect to RabbitMQ at {RABBITMQ_HOST}:{RABBITMQ_PORT}", flush=True)
             connection = get_rabbitmq_connection()
             if not connection:
-                print("[Dispatcher] RabbitMQ not available, retrying in 5s...")
+                print(f"[Dispatcher {NODE_ID}] RabbitMQ not available, retrying in 5s...", flush=True)
                 time.sleep(5)
                 continue
             
+            print(f"[Dispatcher {NODE_ID}] RabbitMQ connected successfully", flush=True)
             channel = connection.channel()
             
             # Declare exchange
@@ -289,9 +295,11 @@ def rabbitmq_consumer_loop():
                 exchange_type='topic',
                 durable=True
             )
+            print(f"[Dispatcher {NODE_ID}] Exchange '{RABBITMQ_EXCHANGE}' declared", flush=True)
             
             # Declare queue
             channel.queue_declare(queue=RABBITMQ_QUEUE, durable=True)
+            print(f"[Dispatcher {NODE_ID}] Queue '{RABBITMQ_QUEUE}' declared", flush=True)
             
             # Bind to all topics (using wildcard)
             # In production, you might bind to specific topics per dispatcher
@@ -300,40 +308,49 @@ def rabbitmq_consumer_loop():
                 queue=RABBITMQ_QUEUE,
                 routing_key='#'  # Subscribe to all topics
             )
+            print(f"[Dispatcher {NODE_ID}] Queue bound to exchange with routing key '#'", flush=True)
             
             # Set QoS
             channel.basic_qos(prefetch_count=1)
             
-            print(f"[Dispatcher] Consuming from queue: {RABBITMQ_QUEUE}")
+            print(f"[Dispatcher {NODE_ID}] *** NOW CONSUMING from queue: {RABBITMQ_QUEUE} ***", flush=True)
             
             def callback(ch, method, properties, body):
                 """Message callback"""
                 try:
+                    print(f"[Dispatcher {NODE_ID}] *** RECEIVED MESSAGE from RabbitMQ ***", flush=True)
                     message = json.loads(body)
+                    print(f"[Dispatcher {NODE_ID}] Message: {json.dumps(message, indent=2)}", flush=True)
                     success = process_notification(message)
                     
                     if success:
                         ch.basic_ack(delivery_tag=method.delivery_tag)
+                        print(f"[Dispatcher {NODE_ID}] Message acknowledged", flush=True)
                     else:
                         # Reject and requeue
                         ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+                        print(f"[Dispatcher {NODE_ID}] Message rejected and requeued", flush=True)
                 
                 except Exception as e:
-                    print(f"[Dispatcher] Error in callback: {e}")
+                    print(f"[Dispatcher {NODE_ID}] Error in callback: {e}", flush=True)
+                    traceback.print_exc()
                     ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
             
             # Start consuming
             channel.basic_consume(queue=RABBITMQ_QUEUE, on_message_callback=callback)
+            print(f"[Dispatcher {NODE_ID}] Starting to consume messages...", flush=True)
             channel.start_consuming()
         
         except Exception as e:
-            print(f"[Dispatcher] RabbitMQ consumer error: {e}")
+            print(f"[Dispatcher {NODE_ID}] RabbitMQ consumer error: {e}", flush=True)
+            traceback.print_exc()
             time.sleep(5)
         
         finally:
             if connection and not connection.is_closed:
                 try:
                     connection.close()
+                    print(f"[Dispatcher {NODE_ID}] RabbitMQ connection closed", flush=True)
                 except:
                     pass
 

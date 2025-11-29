@@ -20,8 +20,8 @@ spec:
       serviceAccountName: distributed-events-sa
       containers:
       - name: subscription-service
-        image: your-registry/subscription-service:latest
-        imagePullPolicy: Always
+        image: subscription-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5002
         env:

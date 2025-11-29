@@ -62,9 +62,20 @@ RABBITMQ_USER = os.getenv('RABBITMQ_USER', 'guest')
 RABBITMQ_PASSWORD = os.getenv('RABBITMQ_PASSWORD', 'guest')
 RABBITMQ_EXCHANGE = os.getenv('RABBITMQ_EXCHANGE', 'events.topic')
 PORT = int(os.getenv('PORT', '5003'))
+DYNAMODB_ENDPOINT = os.getenv('DYNAMODB_ENDPOINT')  # For local development
 
 # Initialize AWS services
-dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+if DYNAMODB_ENDPOINT:
+    # Use local DynamoDB
+    dynamodb = boto3.resource('dynamodb', 
+                            region_name=AWS_REGION,
+                            endpoint_url=DYNAMODB_ENDPOINT)
+    print(f"[Publisher Service] Using DynamoDB Local at: {DYNAMODB_ENDPOINT}")
+else:
+    # Use AWS DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+    print(f"[Publisher Service] Using AWS DynamoDB in region: {AWS_REGION}")
+
 events_table = dynamodb.Table(EVENTS_TABLE)
 s3_client = boto3.client('s3', region_name=AWS_REGION)
 

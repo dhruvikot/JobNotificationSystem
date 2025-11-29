@@ -20,8 +20,8 @@ spec:
       serviceAccountName: distributed-events-sa  # For AWS IAM roles
       containers:
       - name: auth-service
-        image: your-registry/auth-service:latest  # Replace with your image
-        imagePullPolicy: Always
+        image: auth-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5001
         env:
