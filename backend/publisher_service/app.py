@@ -9,6 +9,7 @@ Key Features:
 - Publisher-side filtering (reduces network traffic)
 - Popularity-based priority assignment
 - Integration with RabbitMQ topic exchange
+- Bully leader election for coordinated tasks
 
 Endpoints:
 - POST /events - Create new event
@@ -16,6 +17,10 @@ Endpoints:
 - GET /events - List events
 - GET /events/<event_id> - Get single event
 - POST /events/<event_id>/publish - Publish event to subscribers
+- POST /events/<event_id>/unpublish - Unpublish event
+- GET /election/status - Get election status
+- POST /election/message - Handle election messages
+- POST /election/heartbeat - Handle leader heartbeat
 - GET /health - Health check
 """
 
@@ -23,6 +28,7 @@ import os
 import sys
 import time
 import json
+import threading
 from decimal import Decimal
 import boto3
 import pika
@@ -37,11 +43,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from libs.filtering import get_subscribers_for_event, build_notification_payload
 from libs.popularity import increment_topic, get_priority
 from libs.timestamps import get_lamport_clock, create_timestamped_event
+from libs.leader_election import BullyElection
 
 app = Flask(__name__)
 CORS(app)
 
 # Configuration
+NODE_ID = os.getenv('NODE_ID', f'publisher-{int(time.time())}')
+NODE_URL = os.getenv('NODE_URL', 'http://localhost:5003')
+PEER_NODES = os.getenv('PEER_NODES', '').split(',') if os.getenv('PEER_NODES') else []
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 EVENTS_TABLE = os.getenv('EVENTS_TABLE', 'Events')
 S3_BUCKET = os.getenv('EVENT_MEDIA_BUCKET', 'event-media-bucket')
@@ -58,9 +68,14 @@ dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
 events_table = dynamodb.Table(EVENTS_TABLE)
 s3_client = boto3.client('s3', region_name=AWS_REGION)
 
-print(f"[Publisher Service] Starting on port {PORT}")
-print(f"[Publisher Service] Using DynamoDB table: {EVENTS_TABLE}")
-print(f"[Publisher Service] RabbitMQ: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
+# Initialize Leader Election
+election = None  # Initialized after Flask app starts
+
+print(f"[Publisher] Starting node {NODE_ID} on port {PORT}")
+print(f"[Publisher] Node URL: {NODE_URL}")
+print(f"[Publisher] Peer nodes: {PEER_NODES if PEER_NODES else 'None (single node mode)'}")
+print(f"[Publisher] Using DynamoDB table: {EVENTS_TABLE}")
+print(f"[Publisher] RabbitMQ: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
 
 
 # ============================================================================
@@ -230,7 +245,9 @@ def health():
     """Health check endpoint"""
     return jsonify({
         'status': 'healthy',
-        'service': 'publisher-service'
+        'service': 'publisher-service',
+        'node_id': NODE_ID,
+        'is_leader': election.is_leader() if election else False
     }), 200
 
 
@@ -681,9 +698,133 @@ def unpublish_event(event_id):
 
 
 # ============================================================================
+# Leader Election Endpoints
+# ============================================================================
+
+@app.route('/election/status', methods=['GET'])
+def election_status():
+    """Get election status"""
+    if not election:
+        return jsonify({'error': 'Election not initialized'}), 500
+    
+    try:
+        return jsonify({
+            'node_id': NODE_ID,
+            'is_leader': election.is_leader(),
+            'current_leader': election.get_leader(),
+            'state': election.state.value
+        }), 200
+    except Exception as e:
+        print(f"[Publisher] Error getting election status: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/election/message', methods=['POST'])
+def handle_election_message():
+    """Handle election protocol messages (ELECTION, COORDINATOR)"""
+    if not election:
+        return jsonify({'error': 'Election not initialized'}), 500
+    
+    try:
+        data = request.get_json()
+        msg_type = data.get('type')
+        from_node = data.get('from_node')
+        
+        if msg_type == 'ELECTION':
+            # Received election message
+            should_respond = election.handle_election_message(from_node)
+            return jsonify({'success': True, 'responded': should_respond}), 200
+        
+        elif msg_type == 'COORDINATOR':
+            # Received coordinator announcement
+            leader_id = data.get('leader_id')
+            leader_url = data.get('leader_url')
+            election.handle_coordinator_message(leader_id, leader_url)
+            return jsonify({'success': True}), 200
+        
+        return jsonify({'error': 'Unknown message type'}), 400
+    
+    except Exception as e:
+        print(f"[Publisher] Error handling election message: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+@app.route('/election/heartbeat', methods=['POST'])
+def handle_election_heartbeat():
+    """Handle leader heartbeat"""
+    if not election:
+        return jsonify({'error': 'Election not initialized'}), 500
+    
+    try:
+        data = request.get_json()
+        leader_id = data.get('leader_id')
+        election.handle_heartbeat(leader_id)
+        return jsonify({'success': True}), 200
+    except Exception as e:
+        print(f"[Publisher] Error handling heartbeat: {e}")
+        return jsonify({'error': 'Internal server error'}), 500
+
+
+# ============================================================================
+# Leader Election Initialization
+# ============================================================================
+
+def on_become_leader():
+    """Called when this node becomes the leader"""
+    print(f"[Publisher] 🏆 Node {NODE_ID} became the LEADER")
+    # Leader can perform exclusive tasks here
+
+
+def on_lose_leadership():
+    """Called when this node loses leadership"""
+    print(f"[Publisher] ⚠️  Node {NODE_ID} lost leadership")
+
+
+def start_election():
+    """Initialize leader election"""
+    global election
+    
+    if not PEER_NODES or all(not node.strip() for node in PEER_NODES):
+        print("[Publisher] Running in single-node mode (no leader election)")
+        return
+    
+    # Parse peer nodes
+    peers = {}
+    for peer_url in PEER_NODES:
+        peer_url = peer_url.strip()
+        if peer_url:
+            # Extract node_id from URL (e.g., publisher-service-2 from http://publisher-service-2:5013)
+            peer_id = peer_url.split('//')[1].split(':')[0]
+            peers[peer_id] = peer_url
+    
+    print(f"[Publisher] Initializing leader election with peers: {peers}")
+    
+    # Initialize Bully Election
+    all_nodes = {NODE_ID: NODE_URL}
+    all_nodes.update(peers)
+    
+    election = BullyElection(
+        node_id=NODE_ID,
+        node_url=NODE_URL,
+        all_nodes=all_nodes
+    )
+    
+    election.on_become_leader = on_become_leader
+    election.on_lose_leadership = on_lose_leadership
+    
+    election.start()
+    
+    print("[Publisher] Leader election initialized")
+
+
+# ============================================================================
 # Main
 # ============================================================================
 
 if __name__ == '__main__':
+    # Start leader election in background
+    if PEER_NODES:
+        threading.Thread(target=start_election, daemon=True).start()
+    
     app.run(host='0.0.0.0', port=PORT, debug=os.getenv('FLASK_ENV') == 'development')
 

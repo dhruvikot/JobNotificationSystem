@@ -50,6 +50,7 @@ CORS(app)
 # Configuration
 NODE_ID = os.getenv('NODE_ID', f'dispatcher-{int(time.time())}')
 NODE_URL = os.getenv('NODE_URL', 'http://localhost:5004')
+PEER_NODES = os.getenv('PEER_NODES', '').split(',') if os.getenv('PEER_NODES') else []
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 SNS_TOPIC_ARN = os.getenv('NOTIFICATIONS_SNS_TOPIC_ARN', '')
 RABBITMQ_HOST = os.getenv('RABBITMQ_HOST', 'localhost')
@@ -78,6 +79,8 @@ in_app_notifications = {}  # user_id -> deque of notifications
 notifications_lock = threading.Lock()
 
 print(f"[Dispatcher] Starting node {NODE_ID} on port {PORT}")
+print(f"[Dispatcher] Node URL: {NODE_URL}")
+print(f"[Dispatcher] Peer nodes: {PEER_NODES if PEER_NODES else 'None (single node mode)'}")
 print(f"[Dispatcher] RabbitMQ: {RABBITMQ_HOST}:{RABBITMQ_PORT}")
 print(f"[Dispatcher] Redis: {REDIS_HOST}:{REDIS_PORT}")
 print(f"[Dispatcher] SNS Topic: {SNS_TOPIC_ARN or 'Not configured'}")
@@ -430,12 +433,22 @@ def start_mcp_and_election():
     
     print("[Dispatcher] Registered with MCP")
     
-    # Initialize leader election
-    # In a real deployment, discover other dispatcher nodes via MCP or K8s API
-    all_dispatcher_nodes = {
-        NODE_ID: NODE_URL
-        # Add other dispatchers here or discover dynamically
-    }
+    # Initialize leader election with peer nodes
+    if not PEER_NODES or all(not node.strip() for node in PEER_NODES):
+        print("[Dispatcher] Running in single-node mode (no leader election)")
+        # Still initialize election with just this node
+        all_dispatcher_nodes = {NODE_ID: NODE_URL}
+    else:
+        # Parse peer nodes
+        all_dispatcher_nodes = {NODE_ID: NODE_URL}
+        for peer_url in PEER_NODES:
+            peer_url = peer_url.strip()
+            if peer_url:
+                # Extract node_id from URL (e.g., notification-dispatcher-2 from http://notification-dispatcher-2:5014)
+                peer_id = peer_url.split('//')[1].split(':')[0]
+                all_dispatcher_nodes[peer_id] = peer_url
+        
+        print(f"[Dispatcher] Initializing leader election with nodes: {all_dispatcher_nodes}")
     
     election = BullyElection(
         node_id=NODE_ID,
