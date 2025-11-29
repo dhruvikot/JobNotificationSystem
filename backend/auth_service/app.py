@@ -18,6 +18,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 from datetime import datetime, timedelta
 import boto3
+from boto3.dynamodb.conditions import Key, Attr
 from botocore.exceptions import ClientError
 
 app = Flask(__name__)
@@ -29,9 +30,20 @@ JWT_EXPIRATION_HOURS = int(os.getenv('JWT_EXPIRATION_HOURS', '24'))
 AWS_REGION = os.getenv('AWS_REGION', 'us-east-1')
 USERS_TABLE = os.getenv('USERS_TABLE', 'Users')
 PORT = int(os.getenv('PORT', '5001'))
+DYNAMODB_ENDPOINT = os.getenv('DYNAMODB_ENDPOINT')  # For local development
 
 # Initialize DynamoDB
-dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+if DYNAMODB_ENDPOINT:
+    # Use local DynamoDB
+    dynamodb = boto3.resource('dynamodb', 
+                            region_name=AWS_REGION,
+                            endpoint_url=DYNAMODB_ENDPOINT)
+    print(f"[Auth Service] Using DynamoDB Local at: {DYNAMODB_ENDPOINT}")
+else:
+    # Use AWS DynamoDB
+    dynamodb = boto3.resource('dynamodb', region_name=AWS_REGION)
+    print(f"[Auth Service] Using AWS DynamoDB in region: {AWS_REGION}")
+
 users_table = dynamodb.Table(USERS_TABLE)
 
 print(f"[Auth Service] Starting on port {PORT}")
@@ -152,7 +164,7 @@ def register():
         try:
             response = users_table.query(
                 IndexName='EmailIndex',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(email)
+                KeyConditionExpression=Key('email').eq(email)
             )
             
             if response['Items']:
@@ -162,7 +174,7 @@ def register():
             # If EmailIndex doesn't exist, do a scan (less efficient)
             print(f"[Auth] Warning: EmailIndex not found, using scan: {e}")
             response = users_table.scan(
-                FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(email)
+                FilterExpression=Attr('email').eq(email)
             )
             if response['Items']:
                 return jsonify({'error': 'User with this email already exists'}), 409
@@ -367,13 +379,13 @@ def login():
         try:
             response = users_table.query(
                 IndexName='EmailIndex',
-                KeyConditionExpression=boto3.dynamodb.conditions.Key('email').eq(email)
+                KeyConditionExpression=Key('email').eq(email)
             )
             users = response['Items']
         except ClientError:
             # Fallback to scan if index doesn't exist
             response = users_table.scan(
-                FilterExpression=boto3.dynamodb.conditions.Attr('email').eq(email)
+                FilterExpression=Attr('email').eq(email)
             )
             users = response['Items']
         

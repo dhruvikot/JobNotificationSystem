@@ -19,13 +19,13 @@ spec:
     spec:
       containers:
       - name: frontend-web
-        image: your-registry/frontend-web:latest
-        imagePullPolicy: Always
+        image: frontend:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 80
         env:
         - name: REACT_APP_API_URL
-          value: "http://api-gateway-service"  # Internal K8s service
+          value: "http://localhost:8080"  # Local development - port forwarded API Gateway
         resources:
           requests:
             memory: "128Mi"

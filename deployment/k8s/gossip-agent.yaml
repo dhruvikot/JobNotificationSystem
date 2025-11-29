@@ -21,8 +21,8 @@ spec:
       serviceAccountName: distributed-events-sa
       containers:
       - name: gossip-agent
-        image: your-registry/gossip-agent:latest
-        imagePullPolicy: Always
+        image: gossip-agent:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5006
         env:

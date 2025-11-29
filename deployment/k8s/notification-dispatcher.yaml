@@ -21,8 +21,8 @@ spec:
       serviceAccountName: distributed-events-sa
       containers:
       - name: notification-dispatcher
-        image: your-registry/notification-dispatcher:latest
-        imagePullPolicy: Always
+        image: notification-dispatcher:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5004
         env:

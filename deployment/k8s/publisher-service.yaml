@@ -20,8 +20,8 @@ spec:
       serviceAccountName: distributed-events-sa
       containers:
       - name: publisher-service
-        image: your-registry/publisher-service:latest
-        imagePullPolicy: Always
+        image: publisher-service:latest
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 5003
         env:

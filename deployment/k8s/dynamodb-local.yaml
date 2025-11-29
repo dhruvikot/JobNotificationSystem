@@ -1,0 +1,49 @@
+---
+# DynamoDB Local Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dynamodb-local
+  namespace: distributed-events
+  labels:
+    app: dynamodb-local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dynamodb-local
+  template:
+    metadata:
+      labels:
+        app: dynamodb-local
+    spec:
+      containers:
+      - name: dynamodb-local
+        image: amazon/dynamodb-local:latest
+        ports:
+        - containerPort: 8000
+          name: dynamodb
+        args: ["-jar", "DynamoDBLocal.jar", "-sharedDb", "-inMemory"]
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+---
+# DynamoDB Local Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: dynamodb-local
+  namespace: distributed-events
+spec:
+  type: ClusterIP
+  selector:
+    app: dynamodb-local
+  ports:
+  - name: dynamodb
+    port: 8000
+    targetPort: 8000

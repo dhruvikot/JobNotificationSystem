@@ -5,13 +5,15 @@ metadata:
   namespace: distributed-events
 data:
   # RabbitMQ Configuration
-  RABBITMQ_HOST: "rabbitmq-service"
+  RABBITMQ_HOST: "rabbitmq"
   RABBITMQ_PORT: "5672"
   RABBITMQ_USER: "guest"
   RABBITMQ_EXCHANGE: "events.topic"
-  
+  RABBITMQ_QUEUE: "dispatcher_queue"
+
   # AWS Configuration
   AWS_REGION: "us-east-1"
+  DYNAMODB_ENDPOINT: "http://dynamodb-local:8000"  # For local development with DynamoDB Local
   
   # DynamoDB Tables
   USERS_TABLE: "Users"
@@ -26,7 +28,11 @@ data:
   DISPATCHER_SERVICE_URL: "http://notification-dispatcher-service:5004"
   GOSSIP_AGENT_URL: "http://gossip-agent-service:5006"
   
+  # Redis Configuration
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  
   # Flask Environment
-  FLASK_ENV: "production"
+  FLASK_ENV: "development"
 
 

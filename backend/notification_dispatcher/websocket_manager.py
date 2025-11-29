@@ -37,11 +37,22 @@ class WebSocketManager:
             self.redis_client.ping()
             print(f"[WebSocket] Connected to Redis at {redis_host}:{redis_port}")
             self.redis_available = True
+            
+            # Initialize Redis pub/sub for cross-pod notification broadcasting
+            self.pubsub = self.redis_client.pubsub()
+            self.pubsub.subscribe('notifications')
+            
+            # Start background thread to listen for notifications from other pods
+            self.pubsub_thread = threading.Thread(target=self._redis_pubsub_listener, daemon=True)
+            self.pubsub_thread.start()
+            print(f"[WebSocket] Redis pub/sub listener started")
+            
         except Exception as e:
             print(f"[WebSocket] Redis connection failed: {e}")
             print(f"[WebSocket] Running without Redis (notifications won't persist)")
             self.redis_client = None
             self.redis_available = False
+            self.pubsub = None
         
         # Register WebSocket route
         @self.sock.route('/ws/notifications/<user_id>')
@@ -104,7 +115,35 @@ class WebSocketManager:
         if self.redis_available:
             self.cache_notification(user_id, notification)
         
-        # 2. Push to active WebSocket connections (real-time delivery)
+        # 2. Broadcast to all pods via Redis pub/sub
+        # Note: We only publish to Redis and let the pub/sub listener handle actual delivery
+        # This prevents duplicate notifications (this pod would push twice otherwise)
+        if self.redis_available and self.pubsub:
+            message = {
+                'user_id': user_id,
+                'notification': notification
+            }
+            try:
+                self.redis_client.publish('notifications', json.dumps(message))
+                print(f"[WebSocket] Published notification for {user_id} to Redis pub/sub (all pods will push)")
+            except Exception as e:
+                print(f"[WebSocket] Failed to publish to Redis: {e}")
+                # Fallback: push locally if Redis fails
+                print(f"[WebSocket] Falling back to local push due to Redis failure")
+                self._push_to_local_connections(user_id, notification)
+        else:
+            # No Redis available, push directly to local connections
+            print(f"[WebSocket] No Redis pub/sub, pushing locally only")
+            self._push_to_local_connections(user_id, notification)
+    
+    def _push_to_local_connections(self, user_id, notification):
+        """
+        Push notification to local WebSocket connections on this pod
+        
+        Args:
+            user_id: User ID
+            notification: Notification data dict
+        """
         with self.lock:
             if user_id in self.connections:
                 message = json.dumps({
@@ -127,8 +166,34 @@ class WebSocketManager:
                 
                 return True
             else:
-                print(f"[WebSocket] User {user_id} not connected (cached for later)")
+                print(f"[WebSocket] User {user_id} not connected to this pod (will receive from Redis pub/sub)")
                 return False
+    
+    def _redis_pubsub_listener(self):
+        """
+        Background thread that listens for notifications from Redis pub/sub
+        and pushes them to local WebSocket connections
+        """
+        print(f"[WebSocket] Starting Redis pub/sub listener thread", flush=True)
+        
+        try:
+            for message in self.pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        data = json.loads(message['data'])
+                        user_id = data.get('user_id')
+                        notification = data.get('notification')
+                        
+                        if user_id and notification:
+                            print(f"[WebSocket] Received pub/sub message for user {user_id}", flush=True)
+                            # Push to local connections on this pod
+                            self._push_to_local_connections(user_id, notification)
+                    except Exception as e:
+                        print(f"[WebSocket] Error processing pub/sub message: {e}", flush=True)
+                elif message['type'] == 'subscribe':
+                    print(f"[WebSocket] Subscribed to channel: {message['channel']}", flush=True)
+        except Exception as e:
+            print(f"[WebSocket] Redis pub/sub listener error: {e}", flush=True)
     
     def cache_notification(self, user_id, notification):
         """
