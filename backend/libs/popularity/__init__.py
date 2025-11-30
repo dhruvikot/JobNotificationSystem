@@ -69,10 +69,20 @@ class PopularityTracker:
         
         if self.use_dynamodb:
             try:
-                self.dynamodb = boto3.resource(
-                    'dynamodb',
-                    region_name=os.getenv('AWS_REGION', 'us-east-1')
-                )
+                # Check for DynamoDB Local endpoint
+                endpoint_url = os.getenv('DYNAMODB_ENDPOINT')
+                if endpoint_url:
+                    self.dynamodb = boto3.resource(
+                        'dynamodb',
+                        endpoint_url=endpoint_url,
+                        region_name=os.getenv('AWS_REGION', 'us-east-1')
+                    )
+                    print(f"[Popularity] Using DynamoDB Local at: {endpoint_url}")
+                else:
+                    self.dynamodb = boto3.resource(
+                        'dynamodb',
+                        region_name=os.getenv('AWS_REGION', 'us-east-1')
+                    )
                 self.table = self.dynamodb.Table(self.table_name)
                 print(f"[Popularity] Connected to DynamoDB table: {self.table_name}")
             except Exception as e:
@@ -144,6 +154,23 @@ class PopularityTracker:
         self.memory_store[topic]['last_updated'] = int(time.time())
         
         return self.memory_store[topic]['count']
+    
+    def set_count_memory_only(self, topic: str, count: int, last_updated: int = None) -> None:
+        """
+        Set the popularity count in memory only (no DynamoDB write).
+        
+        This is used for syncing from gossip where we don't want to 
+        double-write to DynamoDB.
+        
+        Args:
+            topic: Topic name
+            count: Count value to set
+            last_updated: Timestamp (defaults to now)
+        """
+        self.memory_store[topic] = {
+            'count': count,
+            'last_updated': last_updated or int(time.time())
+        }
     
     def get_count(self, topic: str) -> int:
         """
@@ -232,9 +259,28 @@ class PopularityTracker:
         Returns:
             List of topic info dicts, sorted by count descending
         """
-        # If using DynamoDB, we'd need a GSI on count for efficient querying
-        # For now, use memory cache
+        # If using DynamoDB, scan the table to get all topics
+        if self.use_dynamodb and self.table:
+            try:
+                response = self.table.scan()
+                items = response.get('Items', [])
+                
+                if items:
+                    print(f"[Popularity] DynamoDB scan returned {len(items)} items")
+                
+                # Update memory cache with DynamoDB data
+                for item in items:
+                    topic = item['topic']
+                    self.memory_store[topic] = {
+                        'count': int(item.get('count', 0)),
+                        'last_updated': int(item.get('last_updated', 0))
+                    }
+            except Exception as e:
+                print(f"[Popularity] Error scanning DynamoDB: {e}")
+                import traceback
+                traceback.print_exc()
         
+        # Build list from memory store
         topics_with_counts = [
             {'topic': topic, 'count': data['count'], 'last_updated': data['last_updated']}
             for topic, data in self.memory_store.items()

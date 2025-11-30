@@ -51,9 +51,9 @@ class MembershipProtocol:
     """
     
     def __init__(self, 
-                 heartbeat_timeout: int = 10,
-                 suspect_timeout: int = 5,
-                 cleanup_interval: int = 30):
+                 heartbeat_timeout: int = 30,
+                 suspect_timeout: int = 15,
+                 cleanup_interval: int = 60):
         """
         Args:
             heartbeat_timeout: Seconds before marking node as suspect
@@ -121,9 +121,13 @@ class MembershipProtocol:
             node = self.members[node_id]
             node.last_seen = time.time()
             
-            # Recover from suspect state if heartbeat received
+            # Recover from suspect or dead state if heartbeat received
             if node.status == NodeStatus.SUSPECT.value:
-                print(f"[MCP] Node recovered from suspect: {node_id}")
+                print(f"[MCP] Node state change: {node_id} (suspect -> alive) - recovered via heartbeat")
+                node.status = NodeStatus.ALIVE.value
+                self._trigger_callbacks('on_node_recover', node)
+            elif node.status == NodeStatus.DEAD.value:
+                print(f"[MCP] Node state change: {node_id} (dead -> alive) - recovered via heartbeat")
                 node.status = NodeStatus.ALIVE.value
                 self._trigger_callbacks('on_node_recover', node)
             
@@ -182,8 +186,10 @@ class MembershipProtocol:
             
             node = self.members[node_id]
             if node.status != NodeStatus.SUSPECT.value:
-                print(f"[MCP] Node marked as SUSPECT: {node_id}")
+                previous_status = node.status
                 node.status = NodeStatus.SUSPECT.value
+                time_since_seen = time.time() - node.last_seen
+                print(f"[MCP] Node state change: {node_id} ({previous_status} -> suspect), last_seen {time_since_seen:.1f}s ago")
                 self._trigger_callbacks('on_node_suspect', node)
             
             return True
@@ -204,9 +210,13 @@ class MembershipProtocol:
             
             node = self.members[node_id]
             if node.status != NodeStatus.DEAD.value:
-                print(f"[MCP] Node marked as DEAD: {node_id}")
+                previous_status = node.status
                 node.status = NodeStatus.DEAD.value
+                time_since_seen = time.time() - node.last_seen
+                print(f"[MCP] Node state change: {node_id} ({previous_status} -> dead), last_seen {time_since_seen:.1f}s ago")
                 self._trigger_callbacks('on_node_dead', node)
+            
+            return True
             
             return True
     
@@ -232,12 +242,27 @@ class MembershipProtocol:
         Merge remote membership state (used by gossip protocol).
         
         Uses last_seen timestamp to resolve conflicts.
+        Skips dead nodes that are too old (beyond cleanup_interval).
         
         Args:
             remote_membership: Membership state from another node
         """
+        now = time.time()
+        
         with self.lock:
             for node_id, remote_data in remote_membership.items():
+                remote_last_seen = remote_data.get('last_seen', 0)
+                remote_status = remote_data.get('status', '')
+                time_since_seen = now - remote_last_seen
+                
+                # Skip dead nodes that are too old - don't re-add cleaned up nodes
+                if remote_status == NodeStatus.DEAD.value and time_since_seen > self.cleanup_interval:
+                    continue
+                
+                # Skip nodes that haven't been seen recently (stale data)
+                if time_since_seen > (self.heartbeat_timeout + self.suspect_timeout + self.cleanup_interval):
+                    continue
+                
                 if node_id not in self.members:
                     # New node learned via gossip
                     node_info = NodeInfo(**remote_data)
@@ -245,12 +270,21 @@ class MembershipProtocol:
                 else:
                     # Merge based on freshness
                     local_node = self.members[node_id]
-                    remote_last_seen = remote_data.get('last_seen', 0)
                     
                     if remote_last_seen > local_node.last_seen:
-                        # Remote state is fresher
-                        for key, value in remote_data.items():
-                            setattr(local_node, key, value)
+                        # Remote state is fresher - update last_seen
+                        local_node.last_seen = remote_last_seen
+                        
+                        # If remote is alive and recent, mark local as alive too
+                        if remote_status == NodeStatus.ALIVE.value and time_since_seen < self.heartbeat_timeout:
+                            if local_node.status != NodeStatus.ALIVE.value:
+                                print(f"[MCP] Node recovered via gossip: {node_id}")
+                                local_node.status = NodeStatus.ALIVE.value
+                                self._trigger_callbacks('on_node_recover', local_node)
+                        
+                        # Update load metrics if present
+                        if remote_data.get('load'):
+                            local_node.load = remote_data['load']
     
     def register_callback(self, event: str, callback):
         """

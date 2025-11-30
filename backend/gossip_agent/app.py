@@ -92,6 +92,10 @@ def sync_popularity_to_gossip():
             # Get top topics from popularity tracker
             top_topics = popularity_tracker.get_top_topics(limit=50)
             
+            # Debug logging
+            if top_topics:
+                print(f"[Gossip Agent] Got {len(top_topics)} topics from popularity tracker")
+            
             # Convert to dict format for gossip
             popularity_data = {
                 topic_info['topic']: {
@@ -102,14 +106,22 @@ def sync_popularity_to_gossip():
             }
             
             # Update gossip state
-            gossip.update_popularity(popularity_data)
+            if popularity_data:
+                gossip.update_popularity(popularity_data)
+                print(f"[Gossip Agent] Updated gossip with popularity: {list(popularity_data.keys())}")
         
         except Exception as e:
             print(f"[Gossip Agent] Error syncing popularity to gossip: {e}")
+            import traceback
+            traceback.print_exc()
 
 
 def sync_gossip_to_popularity():
-    """Periodically sync gossip popularity data back to popularity tracker"""
+    """Periodically sync gossip popularity data back to popularity tracker.
+    
+    NOTE: This only updates the local memory cache, NOT DynamoDB.
+    This prevents double-counting when multiple gossip agents sync.
+    """
     while True:
         try:
             time.sleep(10)
@@ -117,18 +129,35 @@ def sync_gossip_to_popularity():
             # Get popularity data from gossip
             popularity_data = gossip.popularity_data
             
-            # Update local popularity tracker
+            # Update local popularity tracker (memory only, no DynamoDB write)
             for topic, data in popularity_data.items():
                 current_count = popularity_tracker.get_count(topic)
                 remote_count = data.get('count', 0)
+                remote_updated = data.get('last_updated', 0)
                 
-                # If remote has higher count, update local
+                # If remote has higher count, update local memory cache
                 if remote_count > current_count:
-                    diff = remote_count - current_count
-                    popularity_tracker.increment_topic(topic, amount=diff)
+                    popularity_tracker.set_count_memory_only(topic, remote_count, remote_updated)
         
         except Exception as e:
             print(f"[Gossip Agent] Error syncing gossip to popularity: {e}")
+
+
+def sync_gossip_to_mcp():
+    """Periodically sync gossip membership data back to local MCP"""
+    while True:
+        try:
+            time.sleep(3)
+            
+            # Get membership data from gossip (includes remote state)
+            gossip_membership = gossip.membership_data
+            
+            # Merge into local MCP
+            if gossip_membership:
+                mcp.merge_membership(gossip_membership)
+        
+        except Exception as e:
+            print(f"[Gossip Agent] Error syncing gossip to MCP: {e}")
 
 
 # ============================================================================
@@ -460,25 +489,31 @@ def receive_metrics():
 
 
 @app.route('/events/<event_id>', methods=['POST'])
-def track_event():
+def track_event(event_id):
     """
     Track a recent event for gossip dissemination.
     
-    Request body:
+    URL params:
+        event_id: The event ID from the URL path
+    
+    Request body (optional):
     {
-        "event_id": "E123"
+        "event_id": "E123"  # Can also be provided in body
     }
     """
     try:
-        data = request.get_json()
-        event_id = data.get('event_id')
+        # Use URL param, or fallback to body
+        if not event_id:
+            data = request.get_json() or {}
+            event_id = data.get('event_id')
         
         if not event_id:
             return jsonify({'error': 'Missing event_id'}), 400
         
         gossip.add_recent_event(event_id)
+        print(f"[Gossip Agent] Tracked recent event: {event_id}")
         
-        return jsonify({'success': True}), 200
+        return jsonify({'success': True, 'event_id': event_id}), 200
     
     except Exception as e:
         print(f"[Gossip Agent] Error tracking event: {e}")
@@ -503,6 +538,7 @@ def start_background_tasks():
     threading.Thread(target=sync_mcp_to_gossip, daemon=True).start()
     threading.Thread(target=sync_popularity_to_gossip, daemon=True).start()
     threading.Thread(target=sync_gossip_to_popularity, daemon=True).start()
+    threading.Thread(target=sync_gossip_to_mcp, daemon=True).start()
     
     print("[Gossip Agent] Started sync threads")
 

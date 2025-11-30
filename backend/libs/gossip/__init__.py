@@ -79,17 +79,53 @@ class GossipProtocol:
             'messages_received': 0,
             'merge_conflicts': 0
         }
+        
+        # Cleanup settings (should match MCP settings)
+        self.cleanup_interval = 60  # seconds
     
     def update_membership(self, membership: Dict[str, Dict]):
         """
         Update local membership state (typically from MCP).
+        Also cleans up stale/dead nodes.
         
         Args:
             membership: Current membership snapshot
         """
         with self.lock:
-            self.membership_data = membership.copy()
+            # Only keep nodes that are in the fresh membership or are recently alive
+            now = time.time()
+            cleaned_membership = {}
+            
+            for node_id, node_data in membership.items():
+                last_seen = node_data.get('last_seen', 0)
+                status = node_data.get('status', '')
+                time_since_seen = now - last_seen
+                
+                # Skip dead nodes that are too old
+                if status == 'dead' and time_since_seen > self.cleanup_interval:
+                    continue
+                    
+                cleaned_membership[node_id] = node_data
+            
+            self.membership_data = cleaned_membership
             self.version += 1
+    
+    def cleanup_stale_nodes(self):
+        """Remove dead nodes that have been dead for too long"""
+        now = time.time()
+        with self.lock:
+            nodes_to_remove = []
+            for node_id, node_data in self.membership_data.items():
+                last_seen = node_data.get('last_seen', 0)
+                status = node_data.get('status', '')
+                time_since_seen = now - last_seen
+                
+                if status == 'dead' and time_since_seen > self.cleanup_interval:
+                    nodes_to_remove.append(node_id)
+            
+            for node_id in nodes_to_remove:
+                del self.membership_data[node_id]
+                print(f"[Gossip] Cleaned up stale node: {node_id}")
     
     def update_popularity(self, popularity: Dict[str, Dict]):
         """
@@ -158,6 +194,7 @@ class GossipProtocol:
         Merge remote gossip state with local state.
         
         Uses timestamps and version numbers to resolve conflicts.
+        Skips stale/dead nodes that should be cleaned up.
         
         Args:
             remote_state: State received from peer
@@ -171,10 +208,20 @@ class GossipProtocol:
             'new_events': 0
         }
         
+        now = time.time()
+        
         with self.lock:
             # Merge membership
             remote_membership = remote_state.get('membership', {})
             for node_id, remote_node in remote_membership.items():
+                remote_last_seen = remote_node.get('last_seen', 0)
+                remote_status = remote_node.get('status', '')
+                time_since_seen = now - remote_last_seen
+                
+                # Skip dead nodes that are too old
+                if remote_status == 'dead' and time_since_seen > self.cleanup_interval:
+                    continue
+                
                 if node_id not in self.membership_data:
                     # New node discovered
                     self.membership_data[node_id] = remote_node
@@ -182,7 +229,6 @@ class GossipProtocol:
                 else:
                     # Merge based on last_seen timestamp
                     local_last_seen = self.membership_data[node_id].get('last_seen', 0)
-                    remote_last_seen = remote_node.get('last_seen', 0)
                     
                     if remote_last_seen > local_last_seen:
                         self.membership_data[node_id] = remote_node
