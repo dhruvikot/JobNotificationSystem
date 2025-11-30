@@ -793,8 +793,13 @@ def start_election():
     for peer_url in PEER_NODES:
         peer_url = peer_url.strip()
         if peer_url:
-            # Extract node_id from URL (e.g., publisher-service-2 from http://publisher-service-2:5013)
-            peer_id = peer_url.split('//')[1].split(':')[0]
+            # Extract hostname from URL (e.g., publisher-service-2 from http://publisher-service-2:5013)
+            hostname = peer_url.split('//')[1].split(':')[0]
+            # Convert hostname to node_id format (publisher-service-1 -> publisher-1)
+            if hostname.startswith('publisher-service-'):
+                peer_id = hostname.replace('publisher-service-', 'publisher-')
+            else:
+                peer_id = hostname
             peers[peer_id] = peer_url
     
     print(f"[Publisher] Initializing leader election with peers: {peers}")
