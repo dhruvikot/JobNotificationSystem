@@ -298,3 +298,4 @@ def get_relevant_subscriptions(event_topic: str,
     return relevant_subs
 
 
+

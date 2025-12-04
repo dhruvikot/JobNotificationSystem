@@ -395,3 +395,4 @@ def create_gossip_protocol(node_id: str,
     return GossipProtocol(node_id=node_id, peer_list=peers, **kwargs)
 
 
+

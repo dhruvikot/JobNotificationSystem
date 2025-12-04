@@ -51,13 +51,13 @@ class MembershipProtocol:
     """
     
     def __init__(self, 
-                 heartbeat_timeout: int = 30,
+                 heartbeat_timeout: int = 10,
                  suspect_timeout: int = 15,
-                 cleanup_interval: int = 60):
+                 cleanup_interval: int = 30):
         """
         Args:
-            heartbeat_timeout: Seconds before marking node as suspect
-            suspect_timeout: Seconds in suspect state before marking dead
+            heartbeat_timeout: Seconds before marking node as suspect (2 missed heartbeats at 5s interval = 10s)
+            suspect_timeout: Seconds in suspect state before marking dead (total 25s for 5 missed heartbeats)
             cleanup_interval: Seconds between cleanup cycles
         """
         self.members: Dict[str, NodeInfo] = {}
@@ -365,5 +365,6 @@ def get_mcp() -> MembershipProtocol:
     if _mcp_instance is None:
         _mcp_instance = MembershipProtocol()
     return _mcp_instance
+
 
 

@@ -245,3 +245,4 @@ eksctl delete cluster --name distributed-events-cluster --region us-east-1
 - Internal ClusterIP services for backend communication
 
 
+

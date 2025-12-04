@@ -446,7 +446,7 @@ def start_mcp_and_election():
     """Initialize MCP and leader election"""
     global election
     
-    # Register this node with MCP
+    # Register this node with local MCP instance
     node_info = NodeInfo(
         node_id=NODE_ID,
         role='dispatcher',
@@ -517,7 +517,7 @@ def on_lose_leadership():
 
 
 def send_heartbeat_loop():
-    """Send periodic heartbeats to gossip agent's MCP"""
+    """Send periodic heartbeats to MCP (both local and gossip agent)"""
     while True:
         try:
             time.sleep(5)
@@ -528,10 +528,10 @@ def send_heartbeat_loop():
                 'websocket_connections': ws_manager.get_connection_count() if ws_manager else 0
             }
             
-            # Update local MCP
+            # Update local MCP instance
             mcp.update_heartbeat(NODE_ID, metrics)
             
-            # Send heartbeat to gossip agent (central MCP)
+            # Also send heartbeat to gossip agent (centralized MCP server)
             try:
                 response = requests.post(
                     f"{GOSSIP_AGENT_URL}/mcp/heartbeat",
@@ -543,7 +543,7 @@ def send_heartbeat_loop():
                 )
                 if response.status_code == 404:
                     # Node not found, re-register
-                    print(f"[Dispatcher] Node not found, re-registering with gossip agent")
+                    print(f"[Dispatcher] Node not found, re-registering with gossip agent", flush=True)
                     requests.post(
                         f"{GOSSIP_AGENT_URL}/mcp/join",
                         json={
@@ -555,10 +555,12 @@ def send_heartbeat_loop():
                         },
                         timeout=3
                     )
-                elif response.status_code != 200:
-                    print(f"[Dispatcher] Heartbeat to gossip failed: {response.status_code}")
+                elif response.status_code == 200:
+                    print(f"[Dispatcher] Sent heartbeat to gossip agent: {metrics}", flush=True)
+                else:
+                    print(f"[Dispatcher] Gossip agent heartbeat failed: {response.status_code}", flush=True)
             except requests.exceptions.RequestException as e:
-                print(f"[Dispatcher] Failed to send heartbeat to gossip agent: {e}")
+                print(f"[Dispatcher] Error sending heartbeat to gossip agent: {e}", flush=True)
         
         except Exception as e:
             print(f"[Dispatcher] Error in heartbeat loop: {e}")

@@ -170,3 +170,6 @@ docker start publisher-service-3
 
 The leader election should now work correctly!
 
+
+
+

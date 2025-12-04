@@ -26,6 +26,17 @@ export function AuthProvider({ children }) {
       if (userData.user_id) {
         console.log('[Auth] Connecting WebSocket for user:', userData.user_id);
         websocketService.connect(userData.user_id);
+        
+        // Request notification permission if not already granted
+        setTimeout(() => {
+          if ('Notification' in window && Notification.permission === 'default') {
+            websocketService.requestNotificationPermission().then(granted => {
+              if (granted) {
+                console.log('[Auth] ✅ Browser notification permission granted');
+              }
+            });
+          }
+        }, 1000);
       }
     }
     
@@ -43,8 +54,16 @@ export function AuthProvider({ children }) {
       console.log('[Auth] Connecting WebSocket after login');
       websocketService.connect(user.user_id);
       
-      // Request notification permission
-      websocketService.requestNotificationPermission();
+      // Request notification permission (with delay to ensure WebSocket is ready)
+      setTimeout(() => {
+        websocketService.requestNotificationPermission().then(granted => {
+          if (granted) {
+            console.log('[Auth] ✅ Browser notification permission granted');
+          } else {
+            console.log('[Auth] ⚠️ Browser notification permission denied or not supported');
+          }
+        });
+      }, 1000);
     }
   };
 

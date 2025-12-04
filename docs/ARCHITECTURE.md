@@ -524,3 +524,4 @@ Frontend              | 2-5      | 100m    | 128Mi
 6. **Multi-Region**: Global distribution
 
 
+
