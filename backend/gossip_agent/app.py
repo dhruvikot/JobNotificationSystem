@@ -193,7 +193,8 @@ def gossip_exchange():
         # Merge peer's state into ours
         merge_stats = gossip.merge_remote_state(peer_state)
         
-        print(f"[Gossip Agent] Received gossip exchange: {merge_stats}")
+        peer_node_id = peer_state.get('node_id', 'unknown') if isinstance(peer_state, dict) else 'unknown'
+        print(f"[Gossip Agent] [GOSSIP] Received gossip exchange from {peer_node_id}: membership_updates={merge_stats.get('membership_updates', 0)}, popularity_updates={merge_stats.get('popularity_updates', 0)}, new_events={merge_stats.get('new_events', 0)}")
         
         # Return our current state
         local_state = gossip.get_state_snapshot()

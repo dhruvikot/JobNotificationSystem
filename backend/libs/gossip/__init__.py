@@ -22,6 +22,7 @@ from dataclasses import dataclass, asdict
 @dataclass
 class GossipState:
     """Complete state that can be gossiped"""
+    node_id: str  # ID of the node that created this state
     membership: Dict[str, Dict]  # From MCP
     popularity: Dict[str, Dict]  # Topic popularity data
     recent_events: List[str]  # Recent event IDs
@@ -182,6 +183,7 @@ class GossipProtocol:
         """
         with self.lock:
             return GossipState(
+                node_id=self.node_id,
                 membership=self.membership_data.copy(),
                 popularity=self.popularity_data.copy(),
                 recent_events=self.recent_events.copy(),
@@ -323,6 +325,7 @@ class GossipProtocol:
         
         for peer_url in selected_peers:
             try:
+                print(f"[Gossip] [GOSSIP] Gossiping with {peer_url}")
                 self._gossip_with_peer(peer_url, local_state)
             except Exception as e:
                 print(f"[Gossip] Failed to gossip with {peer_url}: {e}")
