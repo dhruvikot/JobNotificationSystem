@@ -1,512 +1,321 @@
-# Distributed Job Events Notifier
+Developed By 
+Dhruvi Kothari(07700023792)
+Pinaki Raj(07700025857)
+Soniya Phaltane(07700020015)
 
-> **🚀 NEW USER? START HERE:** Read [`START_HERE.md`](START_HERE.md) for complete setup instructions!  
-> **📋 CHECKLIST:** Follow [`QUICK_START_CHECKLIST.md`](QUICK_START_CHECKLIST.md) step-by-step.
+Job Notification System
 
----
+A distributed event notification system built with microservices architecture, supporting real-time notifications, publisher-subscriber pattern, and distributed coordination protocols.
 
-A production-grade distributed publish/subscribe notification system built for **COEN 317 – Distributed Systems** course, demonstrating real-world distributed systems concepts including Membership & Coordination Protocol (MCP), Gossip Protocol, Bully Leader Election, Publisher-Side Filtering, Popularity-Based Routing, and **Lamport Logical Clocks**.
 
-## 🎯 Project Overview
+Overview
+This system provides a distributed platform for event management and notifications with the following features:
 
-This system enables event organizers, companies, and career centers to publish events (hackathons, jobs, career fairs, workshops) while students and professionals receive real-time notifications through multiple channels (web, email, SMS).
+- Event creation and publishing by organizers
+- Category-based subscriptions by students
+- Real-time notifications via WebSocket
+- Push notifications (browser desktop notifications)
+- Distributed services with leader election
+- Membership and coordination protocol (MCP)
+- Gossip protocol for state synchronization
+- Publisher-side filtering for efficiency
 
-### Key Features
+Prerequisites
+Before setting up the project, ensure you have the following installed:
 
-- **Distributed Architecture**: Microservices-based system with event-driven communication
-- **3 Core Distributed Algorithms**: Gossip Protocol, Bully Leader Election, Lamport Timestamps ✨
-- **Multiple Notification Channels**: In-app, email (via AWS SNS), and SMS
-- **Intelligent Filtering**: Publisher-side filtering reduces network overhead
-- **Priority-Based Routing**: Popular topics receive higher priority
-- **Fault Tolerant**: Leader election, gossip protocol, and failure detection
-- **Cloud-Native**: Designed for AWS EKS (Kubernetes) with real AWS services integration
+1. Docker Desktop (version 20.10 or higher)
+   - Download from: https://www.docker.com/products/docker-desktop
+   - Ensure Docker Desktop is running
 
-### ✨ What's New (November 2025)
+2. Docker Compose (usually included with Docker Desktop)
+   - Verify installation: `docker-compose --version`
 
-- **Lamport Logical Clocks**: Added distributed timestamp ordering for causal consistency
-- **Complete Setup Guides**: Step-by-step instructions for first-time AWS users
-- **Comprehensive Testing**: 45+ unit tests covering all distributed algorithms
-- **Algorithm Documentation**: Detailed design docs with examples and scenarios
+3. AWS CLI (optional, for AWS services)
+   - Required if using AWS DynamoDB, S3, or SNS
+   - Download from: https://aws.amazon.com/cli/
 
-## 🏗️ Architecture
+4. Git (for cloning the repository)
+   - Download from: https://git-scm.com/downloads
 
-### High-Level Architecture
+5. Web Browser (Chrome, Firefox, Edge, or Safari)
+   - For accessing the web application
 
-```
-┌─────────────┐
-│   Frontend  │ (React Web App)
-│   (Port 80) │
-└──────┬──────┘
-       │
-       ▼
-┌──────────────────┐
-│  API Gateway     │ (Single Entry Point, JWT Auth)
-│   (Port 5000)    │
-└────────┬─────────┘
-         │
-    ┌────┴────┬────────────┬──────────────┐
-    │         │            │              │
-    ▼         ▼            ▼              ▼
-┌────────┐ ┌──────┐ ┌──────────┐ ┌──────────────┐
-│  Auth  │ │ Sub  │ │Publisher │ │Notification  │
-│Service │ │Service│ │ Service  │ │  Dispatcher  │
-│ :5001  │ │ :5002 │ │  :5003   │ │    :5004     │
-└────────┘ └──────┘ └─────┬────┘ └───────┬──────┘
-                          │               │
-                          └───► RabbitMQ ◄┘
-                                Topic Exchange
-                                  │
-                          ┌───────┴────────┐
-                          │  Gossip Agent  │
-                          │    (:5006)     │
-                          │  MCP & Gossip  │
-                          └────────────────┘
-
-┌─────────────────────────────────────────────┐
-│         AWS Services                         │
-│  • DynamoDB (Users, Events, Subscriptions)  │
-│  • S3 (Event Media Storage)                 │
-│  • SNS (Email/SMS Notifications)            │
-└─────────────────────────────────────────────┘
-```
-
-### Microservices
-
-1. **API Gateway** (Port 5000)
-   - Single public entry point
-   - JWT authentication & authorization
-   - Request routing to internal services
-
-2. **Auth Service** (Port 5001)
-   - User registration & login
-   - JWT token generation
-   - DynamoDB integration for user storage
-
-3. **Subscription Service** (Port 5002)
-   - Manage user topic subscriptions
-   - Support for wildcards (*, #)
-   - Channel preferences (app, email, SMS)
-
-4. **Publisher Service** (Port 5003)
-   - Event CRUD operations
-   - **Publisher-side filtering** (key optimization)
-   - Publishes to RabbitMQ topic exchange
-   - S3 integration for event media
-
-5. **Notification Dispatcher** (Port 5004)
-   - Consumes from RabbitMQ
-   - Sends notifications via multiple channels
-   - **Bully leader election** for coordination
-   - Leader performs cleanup & aggregation tasks
-
-6. **Gossip Agent** (Port 5006)
-   - **Gossip protocol implementation**
-   - **MCP (Membership & Coordination Protocol)**
-   - State dissemination across cluster
-
-## 🔧 Distributed Systems Concepts
-
-### 1. Membership & Coordination Protocol (MCP)
-
-**Location**: `backend/libs/mcp/__init__.py`
-
-- Tracks health of all nodes in the system
-- Handles JOIN, LEAVE, and HEARTBEAT events
-- Failure detection: `alive → suspect → dead` transitions
-- Soft-state membership (not persisted)
-
-### 2. Gossip Protocol
-
-**Location**: `backend/libs/gossip/__init__.py`
-
-- **Push-pull gossip** for state dissemination
-- Exchanges membership, popularity, and event data
-- Eventual consistency through epidemic-style propagation
-- Configurable fanout and gossip interval
-
-### 3. Leader Election (Bully Algorithm)
-
-**Location**: `backend/libs/leader_election/__init__.py`
-
-**IMPORTANT NOTE**: This is **application-level** leader election, separate from Kubernetes control plane election. Used for coordinating distributed tasks among notification dispatcher nodes.
-
-- Highest-ID node becomes leader
-- Automatic re-election on leader failure
-- Leader-only tasks:
-  - Periodic cleanup of old notifications
-  - Aggregation of popularity metrics to DynamoDB
-  - Global health monitoring
-
-### 4. Publisher-Side Filtering
-
-**Location**: `backend/libs/filtering/__init__.py`
-
-Key distributed systems optimization:
-- Filters subscribers **before** publishing to RabbitMQ
-- Reduces network traffic and processing overhead
-- Supports topic matching with wildcards
-- Location and level-based filtering
-
-### 5. Popularity-Based Routing
-
-**Location**: `backend/libs/popularity/__init__.py`
-
-- Tracks topic view/subscription counts
-- Assigns priority: low/medium/high
-- High-priority notifications processed first
-- Periodically persisted to DynamoDB by leader
-
-## 🛠️ Technology Stack
-
-### Backend
-- **Language**: Python 3.11
-- **Framework**: Flask
-- **Message Broker**: RabbitMQ (topic exchange)
-- **Messaging Protocol**: AMQP
-
-### Frontend
-- **Framework**: React 18
-- **Routing**: React Router
-- **HTTP Client**: Axios
-
-### Cloud & Infrastructure
-- **Platform**: AWS EKS (Kubernetes)
-- **Database**: AWS DynamoDB
-- **Storage**: AWS S3
-- **Notifications**: AWS SNS
-- **Containerization**: Docker
-- **Orchestration**: Kubernetes
-
-## 📋 Prerequisites
-
-- Python 3.11+
-- Node.js 18+
-- Docker & Docker Compose
-- kubectl (for Kubernetes deployment)
-- AWS Account with:
-  - DynamoDB access
-  - S3 bucket
-  - SNS topic
-  - EKS cluster (optional, for production)
-
-## 🚀 Getting Started
-
-### 1. Clone Repository
-
-```bash
-git clone https://github.com/yourusername/distributed-job-events-notifier.git
-cd distributed-job-events-notifier
-```
-
-### 2. Set Up AWS Resources
-
-Create DynamoDB tables:
-
-```bash
-# Users table
-aws dynamodb create-table \
-    --table-name Users \
-    --attribute-definitions AttributeName=user_id,AttributeType=S AttributeName=email,AttributeType=S \
-    --key-schema AttributeName=user_id,KeyType=HASH \
-    --global-secondary-indexes "IndexName=EmailIndex,KeySchema=[{AttributeName=email,KeyType=HASH}],Projection={ProjectionType=ALL},ProvisionedThroughput={ReadCapacityUnits=5,WriteCapacityUnits=5}" \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-
-# Subscriptions table
-aws dynamodb create-table \
-    --table-name Subscriptions \
-    --attribute-definitions AttributeName=user_id,AttributeType=S AttributeName=topic,AttributeType=S \
-    --key-schema AttributeName=user_id,KeyType=HASH AttributeName=topic,KeyType=RANGE \
-    --global-secondary-indexes "IndexName=TopicIndex,KeySchema=[{AttributeName=topic,KeyType=HASH}],Projection={ProjectionType=ALL},ProvisionedThroughput={ReadCapacityUnits=5,WriteCapacityUnits=5}" \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-
-# Events table
-aws dynamodb create-table \
-    --table-name Events \
-    --attribute-definitions AttributeName=event_id,AttributeType=S \
-    --key-schema AttributeName=event_id,KeyType=HASH \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-
-# TopicPopularity table
-aws dynamodb create-table \
-    --table-name TopicPopularity \
-    --attribute-definitions AttributeName=topic,AttributeType=S \
-    --key-schema AttributeName=topic,KeyType=HASH \
-    --provisioned-throughput ReadCapacityUnits=5,WriteCapacityUnits=5
-```
-
-### 3. Local Development with Docker Compose
-
-Create `.env` file:
-
-```bash
-# AWS Configuration
-AWS_REGION=us-east-1
-AWS_ACCESS_KEY_ID=your-access-key
-AWS_SECRET_ACCESS_KEY=your-secret-key
-
-# JWT Secret
-JWT_SECRET=your-very-long-and-secure-secret-key
-
-# AWS Resources
-EVENT_MEDIA_BUCKET=your-s3-bucket-name
-NOTIFICATIONS_SNS_TOPIC_ARN=arn:aws:sns:us-east-1:123456789:notifications
-```
-
-Start all services:
+ Project Setup
+Step 1: Start Docker Services
+* Navigate to the docker directory and start all services:
 
 ```bash
 cd deployment/docker
-docker-compose up --build
+docker-compose up -d
 ```
+* This command will:
+-Build all service images
+-Start all containers in detached mode
+-Set up networking between services
+* Wait 30-60 seconds for all services to initialize.
 
-Access the application:
-- **Frontend**: http://localhost:3000
-- **API Gateway**: http://localhost:5000
-- **RabbitMQ Management**: http://localhost:15672 (guest/guest)
-
-### 4. Production Deployment on Kubernetes
-
-See detailed guide: [deployment/k8s/README.md](deployment/k8s/README.md)
-
-Quick start:
+ Step 2: Verify Services are Running
+* Check that all containers are running:
 
 ```bash
-# Build and push images
-export REGISTRY="your-ecr-repo"
-# ... build commands
-
-# Deploy to K8s
-cd deployment/k8s
-kubectl apply -f namespace.yaml
-kubectl apply -f configmap.yaml
-kubectl apply -f secrets.yaml
-kubectl apply -f .
+docker ps
 ```
 
-## 📚 API Documentation
+* You should see containers for:
+- api-gateway
+- auth-service
+- subscription-service
+- publisher-service-1, publisher-service-2, publisher-service-3
+- notification-dispatcher-1, notification-dispatcher-2, notification-dispatcher-3
+- gossip-agent-1, gossip-agent-2, gossip-agent-3
+- rabbitmq
+- redis
+- frontend-web
 
-### Authentication
+Running the Project:
 
-#### Register
-```http
-POST /auth/register
-Content-Type: application/json
+ Access the Web Application
 
-{
-  "name": "John Doe",
-  "email": "john@example.com",
-  "password": "password123",
-  "phone": "+1234567890",
-  "role": "student"
-}
-```
+1. Open your web browser
+2. Navigate to: `http://localhost:3000`
+3. You should see the login/register page
 
-#### Login
-```http
-POST /auth/login
-Content-Type: application/json
+ Default Test Accounts
 
-{
-  "email": "john@example.com",
-  "password": "password123"
-}
+After seeding data, you can use these accounts:
 
-Response:
-{
-  "success": true,
-  "token": "eyJ...",
-  "user": {...}
-}
-```
+Organizer Account:
+- Email: `charlie@organizer.com`
+- Password: `password123`
 
-### Subscriptions
+Student Account:
+- Email: `alice@student.com`
+- Password: `password123`
 
-#### Get Available Topics
-```http
-GET /subscriptions/topics
-```
+Admin Account:
+- Email: `diana@admin.com`
+- Password: `password123`
 
-#### Create Subscription
-```http
-POST /subscriptions
-Authorization: Bearer <token>
-Content-Type: application/json
+ Service Endpoints
 
-{
-  "topic": "hackathon.aiml",
-  "channels": ["app", "email"],
-  "filters": {
-    "locations": ["San Francisco", "Remote"],
-    "levels": ["beginner", "intermediate"]
-  }
-}
-```
+- Frontend: http://localhost:3000
+- API Gateway: http://localhost:5000
+- Gossip Agent: http://localhost:5006
+- RabbitMQ Management: http://localhost:15672 (guest/guest)
 
-### Events
+ Testing:
 
-#### Create Event (Organizer/Admin only)
-```http
-POST /events
-Authorization: Bearer <token>
-Content-Type: application/json
+ Basic Functionality Test
 
-{
-  "title": "AI/ML Hackathon 2024",
-  "description": "Join us for 48 hours of coding...",
-  "topic": "hackathon.aiml",
-  "start_time": 1734567890,
-  "location": "San Francisco, CA",
-  "level": "beginner"
-}
-```
+# Test 1: User Registration and Login
 
-#### Publish Event
-```http
-POST /events/{event_id}/publish
-Authorization: Bearer <token>
+1. Open browser to `http://localhost:3000`
+2. Click "Register"
+3. Fill in registration form:
+   - Name: Test User
+   - Email: test@example.com
+   - Password: password123
+   - Role: Student
+4. Click "Register"
+5. You should be redirected to the dashboard
+6. Logout and login again with the same credentials
 
-Response:
-{
-  "success": true,
-  "subscribers_count": 150,
-  "priority": "high"
-}
-```
+# Test 2: Create and Publish Event (Organizer)
 
-## 🧪 Testing
+1. Login as organizer: `charlie@organizer.com` / `password123`
+2. Click "Create Event"
+3. Fill in event details:
+   - Title: Test Event
+   - Description: This is a test event
+   - Category: Select any category
+   - Date: Select a future date
+   - Location: Test Location
+4. Click "Create Event"
+5. Find the created event and click "Publish"
+6. You should see a success message
 
-### Test User Flow
+# Test 3: Subscribe and Receive Notifications (Student)
 
-1. **Register** as a student
-2. **Login** to get JWT token
-3. **Subscribe** to topics (e.g., `hackathon.aiml`, `jobs.internship`)
-4. **Browse events**
-5. **Register** as an organizer (separate account)
-6. **Create and publish** an event
-7. **Check notifications** in the first account
+1. Open a new browser window (or use incognito mode)
+2. Login as student: `alice@student.com` / `password123`
+3. Click "Subscriptions"
+4. Subscribe to the same category used in the event
+5. Allow browser notifications when prompted
+6. Go back to organizer window
+7. Publish the event again (or create a new one)
+8. In the student window:
+   - Check "Notifications" page - should show new notification
+   - Check desktop - should show push notification popup
 
-### Test Distributed Features
+# Test 4: Real-Time Notifications
+
+1. Keep the student's notifications page open
+2. In organizer window, create and publish a new event
+3. The notification should appear immediately in the student window
+4. This demonstrates WebSocket real-time delivery
+
+ Service Health Checks
+
+Check if services are responding:
 
 ```bash
-# Check MCP membership
-curl http://localhost:5006/mcp/membership
+# API Gateway
+curl http://localhost:5000/health
 
-# Check gossip statistics
-curl http://localhost:5006/gossip/stats
+# Gossip Agent
+curl http://localhost:5006/health
 
-# Check leader election status
-curl http://localhost:5004/election/status
-
-# View topic popularity
-# (Inspect DynamoDB TopicPopularity table)
+# Check dispatcher status
+curl http://localhost:5004/health
 ```
 
-## 🎓 Distributed Systems Properties Addressed
+ View Service Logs
 
-### 1. Heterogeneity
-- Multiple languages/technologies: Python, JavaScript, RabbitMQ, DynamoDB, S3
-- Standard protocols: HTTP/REST, AMQP, JSON
-- Multi-platform: Web, mobile-ready API
+Monitor service logs for debugging:
 
-### 2. Openness
-- RESTful APIs with clear documentation
-- Standard authentication (JWT)
-- Extensible microservices architecture
+```bash
+# View all logs
+docker-compose logs -f
 
-### 3. Security
-- JWT-based authentication
-- Role-based access control (student, organizer, admin)
-- AWS IAM integration for service-level security
-
-### 4. Failure Handling & Fault Tolerance
-- Leader election for automatic failover
-- Gossip protocol for state recovery
-- RabbitMQ message persistence and acknowledgments
-- Kubernetes health checks and auto-restart
-
-### 5. Concurrency
-- Multiple instances of each service
-- Thread-safe data structures in MCP/Gossip
-- Optimistic locking in DynamoDB
-
-### 6. Quality of Service (QoS)
-- Priority-based message processing
-- RabbitMQ delivery guarantees
-- At-least-once notification delivery
-
-### 7. Scalability
-- Horizontal scaling via Kubernetes HPA
-- Stateless services (except RabbitMQ)
-- Distributed state via gossip
-
-### 8. Transparency
-- **Location**: Clients unaware of service locations
-- **Migration**: Pods can move across nodes
-- **Replication**: Multiple service instances
-- **Concurrency**: Hidden from clients
-- **Failure**: Automatic recovery
-
-## 📂 Project Structure
-
-```
-distributed-job-events-notifier/
-├── backend/
-│   ├── libs/
-│   │   ├── mcp/              # Membership & Coordination Protocol
-│   │   ├── gossip/           # Gossip protocol
-│   │   ├── leader_election/  # Bully algorithm
-│   │   ├── filtering/        # Publisher-side filtering
-│   │   └── popularity/       # Popularity tracking
-│   ├── api_gateway/
-│   ├── auth_service/
-│   ├── subscription_service/
-│   ├── publisher_service/
-│   ├── notification_dispatcher/
-│   ├── gossip_agent/
-│   └── requirements.txt
-├── frontend/
-│   └── web/                  # React application
-├── deployment/
-│   ├── docker/
-│   │   └── docker-compose.yml
-│   └── k8s/                  # Kubernetes manifests
-│       ├── namespace.yaml
-│       ├── configmap.yaml
-│       ├── secrets.yaml
-│       ├── *.yaml            # Service deployments
-│       └── README.md
-├── docs/
-│   ├── ARCHITECTURE.md
-│   └── DESIGN.md
-└── README.md
+# View specific service logs
+docker logs api-gateway -f
+docker logs publisher-service-1 -f
+docker logs notification-dispatcher-1 -f
+docker logs gossip-agent-1 -f
 ```
 
-## 🤝 Contributing
+ Test Distributed Features
 
-This is a university project. For academic integrity, please do not copy directly. Use it as a reference for understanding distributed systems concepts.
+# Test Leader Election (Publishers)
 
-## 📝 License
+1. Check election status:
+   ```bash
+   curl http://localhost:5003/election/status | python -m json.tool
+   curl http://localhost:5013/election/status | python -m json.tool
+   curl http://localhost:5023/election/status | python -m json.tool
+   ```
+2. One publisher should show `"is_leader": true`
+3. Stop the leader: `docker stop publisher-service-3`
+4. Wait 10 seconds
+5. Check status again - a new leader should be elected
 
-This project is for educational purposes as part of COEN 317 - Distributed Systems course.
+# Test MCP Membership
 
-## 👥 Authors
+1. Check membership status:
+   ```bash
+   curl http://localhost:5006/mcp/membership | python -m json.tool
+   ```
+2. Should show all dispatcher nodes with status "alive"
+3. Stop a dispatcher: `docker stop notification-dispatcher-2`
+4. Wait 30 seconds
+5. Check membership again - dispatcher-2 should show status "dead"
 
-- **Your Name** - COEN 317 Student
+# Test Gossip Protocol
 
-## 🙏 Acknowledgments
+1. Check gossip state on all agents:
+   ```bash
+   curl http://localhost:5006/gossip/state | python -m json.tool
+   curl http://localhost:5007/gossip/state | python -m json.tool
+   curl http://localhost:5008/gossip/state | python -m json.tool
+   ```
+2. All three should show similar membership data
+3. This demonstrates state synchronization via gossip protocol
 
-- COEN 317 - Distributed Systems course materials
-- AWS Documentation
-- Flask and React communities
-- RabbitMQ tutorials
+ Architecture
 
-## 📞 Support
+ Services
 
-For questions or issues:
-- Create an issue in the repository
-- Contact: your.email@example.com
+- API Gateway: Routes requests to appropriate services
+- Auth Service: Handles user authentication and authorization
+- Subscription Service: Manages user subscriptions to event categories
+- Publisher Service: Creates and publishes events (3 replicas)
+- Notification Dispatcher: Delivers notifications via WebSocket (3 replicas)
+- Gossip Agent: Manages membership and state synchronization (3 replicas)
+- RabbitMQ: Message broker for event distribution
+- Redis: Cache for persistent notifications
+- Frontend: React web application
 
----
+ Distributed Features
 
-**Built with ❤️ for COEN 317 - Distributed Systems**
+- Leader Election: Bully algorithm for publisher coordination
+- MCP (Membership & Coordination Protocol): Tracks node health and status
+- Gossip Protocol: Synchronizes state across gossip agents
+- Publisher-Side Filtering: Reduces network traffic by filtering before publishing
+
+ Configuration
+
+ Docker Compose Services
+
+All services are defined in `deployment/docker/docker-compose.yml`. Key configurations:
+
+- Ports: Services are exposed on different ports to avoid conflicts
+- Environment Variables: Configured via docker-compose or .env file
+- Networking: All services on `distributed-events-net` network
+- Volumes: Data persistence for RabbitMQ and Redis
+
+ Environment Variables
+
+Key environment variables (set in docker-compose.yml or .env):
+
+- `AWS_REGION`: AWS region for services
+- `AWS_ACCESS_KEY_ID`: AWS access key
+- `AWS_SECRET_ACCESS_KEY`: AWS secret key
+- `JWT_SECRET`: Secret for JWT token signing
+- `GOSSIP_AGENT_URL`: URL for gossip agent service
+- `RABBITMQ_HOST`: RabbitMQ host address
+- `REDIS_HOST`: Redis host address
+
+ Troubleshooting
+
+ Services Not Starting
+
+1. Check Docker is running: `docker ps`
+2. Check for port conflicts: `netstat -ano | findstr :5000`
+3. View logs: `docker-compose logs`
+4. Restart services: `docker-compose restart`
+
+ Cannot Access Frontend
+
+1. Verify frontend container is running: `docker ps | findstr frontend`
+2. Check frontend logs: `docker logs frontend-web`
+3. Try accessing directly: `http://localhost:3000`
+
+ Notifications Not Working
+
+1. Check browser notification permissions
+2. Verify WebSocket connection in browser console (F12)
+3. Check dispatcher logs: `docker logs notification-dispatcher-1`
+4. Verify subscriptions match event categories
+
+ Database Issues
+
+1. Check if DynamoDB is accessible (if using AWS)
+2. Verify AWS credentials are correct
+3. Check subscription service logs: `docker logs subscription-service`
+
+ Stopping the Project
+
+To stop all services:
+
+```bash
+cd deployment/docker
+docker-compose down
+```
+
+To stop and remove all data:
+
+```bash
+docker-compose down -v
+```
+
+ Additional Resources
+
+- Service logs: `docker-compose logs -f [service-name]`
+- Container shell access: `docker exec -it [container-name] /bin/sh`
+- Network inspection: `docker network inspect distributed-events-net`
+
+ Support
+
+For issues or questions, check the service logs or review the configuration files in the deployment directory.
+
 
