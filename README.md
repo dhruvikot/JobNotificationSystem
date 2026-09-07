@@ -1,7 +1,4 @@
-Developed By 
-Dhruvi Kothari(07700023792)
-Pinaki Raj(07700025857)
-Soniya Phaltane(07700020015)
+
 
 Job Notification System
 
